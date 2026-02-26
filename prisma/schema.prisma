@@ -1,0 +1,48 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model Keyword {
+  id        Int           @id @default(autoincrement())
+  name      String        @unique
+  active    Boolean       @default(true)
+  createdAt DateTime      @default(now())
+  results   CrawlResult[]
+}
+
+model CrawlResult {
+  id        Int      @id @default(autoincrement())
+  type      String
+  title     String
+  agency    String
+  budget    String?
+  deadline  String?
+  postDate  String
+  bidNumber String?  @unique
+  url       String?
+  rawData   String
+  isNew     Boolean  @default(true)
+  notified  Boolean  @default(false)
+  keywordId Int?
+  keyword   Keyword? @relation(fields: [keywordId], references: [id])
+  createdAt DateTime @default(now())
+}
+
+model NotifyLog {
+  id        Int      @id @default(autoincrement())
+  type      String
+  message   String
+  success   Boolean
+  createdAt DateTime @default(now())
+}
+
+model Settings {
+  id           Int     @id @default(1)
+  emailEnabled Boolean @default(false)
+  slackEnabled Boolean @default(false)
+  cronSchedule String  @default("0 */2 * * *")
+}
