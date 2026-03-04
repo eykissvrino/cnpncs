@@ -3,6 +3,5 @@ builder = "NIXPACKS"
 buildCommand = "npm install && npx prisma generate && npm run build"
 
 [deploy]
-startCommand = "mkdir -p /data && npx prisma db push && npm start"
-restartPolicyType = "ON_FAILURE"
-restartPolicyMaxRetries = 3
+startCommand = "mkdir -p /data && npx prisma db push && exec node_modules/.bin/next start"
+restartPolicyType = "NEVER"
