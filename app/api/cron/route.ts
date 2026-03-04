@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { runCrawl } from "@/lib/scheduler";
 
+export const maxDuration = 300; // 5분 타임아웃 (Railway 기본 60초 → 300초)
+
 export async function GET() {
   try {
     console.log("[cron] 수동 크롤링 시작:", new Date().toISOString());
