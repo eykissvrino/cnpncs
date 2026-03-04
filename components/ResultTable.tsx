@@ -92,8 +92,8 @@ export default function ResultTable({ results, isLoading }: ResultTableProps) {
                   if (!url && item.type === "order") {
                     try {
                       const raw = JSON.parse(item.rawData || "{}");
-                      if (raw.orderPlanUntyNo) {
-                        url = `https://www.g2b.go.kr/pt/menu/selectSubFrame.do?framesrc=/pt/menu/frameTgong.do?targetUrl=https://www.g2b.go.kr:8101/ep/preparation/prestd/preStdSsn.do?preStdSno=${raw.orderPlanUntyNo}`;
+                      if (raw.bizNm) {
+                        url = `https://www.g2b.go.kr/search/search.jsp?query=${encodeURIComponent(raw.bizNm)}`;
                       }
                     } catch { /* ignore */ }
                   }

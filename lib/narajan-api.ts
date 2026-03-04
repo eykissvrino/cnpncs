@@ -217,8 +217,8 @@ export async function searchOrderPlans(
       postDate: item.nticeDt?.substring(0, 10) ||
         (item.orderYear && item.orderMnth ? `${item.orderYear}-${item.orderMnth.padStart(2, "0")}` : "-"),
       deadline: "-",
-      url: item.orderPlanUntyNo
-        ? `https://www.g2b.go.kr/pt/menu/selectSubFrame.do?framesrc=/pt/menu/frameTgong.do?targetUrl=https://www.g2b.go.kr:8101/ep/preparation/prestd/preStdSsn.do?preStdSno=${item.orderPlanUntyNo}`
+      url: item.bizNm
+        ? `https://www.g2b.go.kr/search/search.jsp?query=${encodeURIComponent(item.bizNm)}`
         : "",
       rawData: JSON.stringify(item),
     }));
@@ -341,8 +341,8 @@ export async function crawlAllOrderPlans(): Promise<UnifiedResult[]> {
             postDate: item.nticeDt?.substring(0, 10) ||
               (item.orderYear && item.orderMnth ? `${item.orderYear}-${item.orderMnth.padStart(2, "0")}` : "-"),
             deadline: "-",
-            url: item.orderPlanUntyNo
-              ? `https://www.g2b.go.kr/pt/menu/selectSubFrame.do?framesrc=/pt/menu/frameTgong.do?targetUrl=https://www.g2b.go.kr:8101/ep/preparation/prestd/preStdSsn.do?preStdSno=${item.orderPlanUntyNo}`
+            url: item.bizNm
+              ? `https://www.g2b.go.kr/search/search.jsp?query=${encodeURIComponent(item.bizNm)}`
               : "",
             rawData: JSON.stringify(item),
           });
