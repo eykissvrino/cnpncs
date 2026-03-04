@@ -87,15 +87,26 @@ export default function ResultTable({ results, isLoading }: ResultTableProps) {
                 {item.deadline || "-"}
               </TableCell>
               <TableCell className="text-center">
-                {item.url ? (
-                  <Button variant="ghost" size="icon" asChild>
-                    <a href={item.url} target="_blank" rel="noopener noreferrer">
-                      <ExternalLink className="h-4 w-4" />
-                    </a>
-                  </Button>
-                ) : (
-                  <span className="text-muted-foreground text-xs">-</span>
-                )}
+                {(() => {
+                  let url = item.url;
+                  if (!url && item.type === "order") {
+                    try {
+                      const raw = JSON.parse(item.rawData || "{}");
+                      if (raw.orderPlanUntyNo) {
+                        url = `https://www.g2b.go.kr/pt/menu/selectSubFrame.do?framesrc=/pt/menu/frameTgong.do?targetUrl=https://www.g2b.go.kr:8101/ep/preparation/prestd/preStdSsn.do?preStdSno=${raw.orderPlanUntyNo}`;
+                      }
+                    } catch { /* ignore */ }
+                  }
+                  return url ? (
+                    <Button variant="ghost" size="icon" asChild>
+                      <a href={url} target="_blank" rel="noopener noreferrer">
+                        <ExternalLink className="h-4 w-4" />
+                      </a>
+                    </Button>
+                  ) : (
+                    <span className="text-muted-foreground text-xs">-</span>
+                  );
+                })()}
               </TableCell>
             </TableRow>
           ))}
