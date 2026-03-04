@@ -1,6 +1,6 @@
 import cron, { type ScheduledTask } from "node-cron";
 import { prisma } from "./db";
-import { crawlAllBids, crawlAllOrderPlans } from "./narajan-api";
+import { crawlAllBids, crawlAllOrderPlans, crawlAllPreSpecs } from "./narajan-api";
 import { sendEmailNotification, sendSlackNotification } from "./notify";
 
 let schedulerTask: ScheduledTask | null = null;
@@ -13,18 +13,21 @@ export async function runFullCrawl(daysBack = 7): Promise<{ saved: number; error
   console.log(`[crawler] 전체 크롤링 시작 (최근 ${daysBack}일)`);
 
   try {
-    const [bids, orders] = await Promise.allSettled([
+    const [bids, orders, preSpecs] = await Promise.allSettled([
       crawlAllBids(daysBack),
       crawlAllOrderPlans(),
+      crawlAllPreSpecs(),
     ]);
 
     const allItems = [
       ...(bids.status === "fulfilled" ? bids.value : []),
       ...(orders.status === "fulfilled" ? orders.value : []),
+      ...(preSpecs.status === "fulfilled" ? preSpecs.value : []),
     ];
 
     if (bids.status === "rejected") errors.push("입찰공고 크롤링 실패: " + String(bids.reason));
     if (orders.status === "rejected") errors.push("발주계획 크롤링 실패: " + String(orders.reason));
+    if (preSpecs.status === "rejected") errors.push("사전규격 크롤링 실패: " + String(preSpecs.reason));
 
     console.log(`[crawler] 수집 완료: ${allItems.length}건`);
 

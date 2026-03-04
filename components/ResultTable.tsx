@@ -87,26 +87,15 @@ export default function ResultTable({ results, isLoading }: ResultTableProps) {
                 {item.deadline || "-"}
               </TableCell>
               <TableCell className="text-center">
-                {(() => {
-                  let url = item.url;
-                  if (item.type === "order") {
-                    try {
-                      const raw = JSON.parse(item.rawData || "{}");
-                      if (raw.bizNm) {
-                        url = `https://www.g2b.go.kr/search/search.jsp?query=${encodeURIComponent(raw.bizNm)}`;
-                      }
-                    } catch { /* ignore */ }
-                  }
-                  return url ? (
-                    <Button variant="ghost" size="icon" asChild>
-                      <a href={url} target="_blank" rel="noopener noreferrer">
-                        <ExternalLink className="h-4 w-4" />
-                      </a>
-                    </Button>
-                  ) : (
-                    <span className="text-muted-foreground text-xs">-</span>
-                  );
-                })()}
+                {item.type !== "order" && item.url ? (
+                  <Button variant="ghost" size="icon" asChild>
+                    <a href={item.url} target="_blank" rel="noopener noreferrer">
+                      <ExternalLink className="h-4 w-4" />
+                    </a>
+                  </Button>
+                ) : (
+                  <span className="text-muted-foreground text-xs">-</span>
+                )}
               </TableCell>
             </TableRow>
           ))}

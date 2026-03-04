@@ -49,6 +49,7 @@ export default function HomePage() {
   const [dashLoading, setDashLoading] = useState(true);
   const [crawling, setCrawling] = useState(false);
   const [selectedKeywords, setSelectedKeywords] = useState<Set<number> | null>(null);
+  const [selectedTypes, setSelectedTypes] = useState<Set<string> | null>(null);
 
   // 검색
   const [keyword, setKeyword] = useState("");
@@ -161,7 +162,7 @@ export default function HomePage() {
     : [];
 
   // 선택된 키워드 기준 필터링
-  const filteredDashItems =
+  const keywordFilteredItems =
     selectedKeywords === null
       ? allDashItems
       : Array.from(
@@ -172,6 +173,25 @@ export default function HomePage() {
               .map((i) => [i.id, i])
           ).values()
         ).sort((a, b) => (b.postDate > a.postDate ? 1 : -1));
+
+  // 유형 필터 적용
+  const filteredDashItems =
+    selectedTypes === null
+      ? keywordFilteredItems
+      : keywordFilteredItems.filter((i) => selectedTypes.has(i.type));
+
+  const toggleType = (type: string) => {
+    setSelectedTypes((prev) => {
+      const next = new Set(prev ?? []);
+      if (next.has(type)) {
+        next.delete(type);
+        return next.size === 0 ? null : next;
+      } else {
+        next.add(type);
+        return next;
+      }
+    });
+  };
 
   const selectedKeywordNames =
     selectedKeywords !== null
@@ -268,6 +288,26 @@ export default function HomePage() {
               })}
             </div>
 
+            {/* 유형 필터 */}
+            <div className="flex flex-wrap gap-2 mb-3">
+              {(["bid", "order", "prespec"] as const).map((type) => {
+                const labels: Record<string, string> = { bid: "입찰공고", order: "발주계획", prespec: "사전규격" };
+                const count = keywordFilteredItems.filter((i) => i.type === type).length;
+                const isOn = selectedTypes?.has(type) ?? false;
+                return (
+                  <Button
+                    key={type}
+                    variant={isOn ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => toggleType(type)}
+                  >
+                    {labels[type]}
+                    <Badge variant="secondary" className="ml-1.5">{count}</Badge>
+                  </Button>
+                );
+              })}
+            </div>
+
             {/* 선택 상태 표시 */}
             {selectedKeywords !== null && selectedKeywordNames.length > 0 && (
               <div className="flex items-center gap-2 mb-3 px-3 py-1.5 bg-muted rounded-md text-sm">
@@ -315,7 +355,7 @@ export default function HomePage() {
             통합 검색
           </h2>
           <p className="text-sm text-muted-foreground mt-1">
-            발주계획 · 입찰공고(용역)를 한 번에 검색합니다
+            사전규격 · 발주계획 · 입찰공고(용역)를 한 번에 검색합니다
           </p>
         </div>
 
@@ -344,21 +384,27 @@ export default function HomePage() {
               <TabsTrigger value="all">
                 전체 <Badge variant="secondary" className="ml-2">{results.total}</Badge>
               </TabsTrigger>
-              <TabsTrigger value="order">
-                발주계획 <Badge variant="secondary" className="ml-2">{results.order.length}</Badge>
-              </TabsTrigger>
               <TabsTrigger value="bid">
                 입찰공고 <Badge variant="secondary" className="ml-2">{results.bid.length}</Badge>
               </TabsTrigger>
+              <TabsTrigger value="order">
+                발주계획 <Badge variant="secondary" className="ml-2">{results.order.length}</Badge>
+              </TabsTrigger>
+              <TabsTrigger value="prespec">
+                사전규격 <Badge variant="secondary" className="ml-2">{results.prespec.length}</Badge>
+              </TabsTrigger>
             </TabsList>
             <TabsContent value="all" className="mt-4">
-              <ResultTable results={[...results.order, ...results.bid]} isLoading={loading} />
+              <ResultTable results={[...results.bid, ...results.order, ...results.prespec]} isLoading={loading} />
+            </TabsContent>
+            <TabsContent value="bid" className="mt-4">
+              <ResultTable results={results.bid} isLoading={loading} />
             </TabsContent>
             <TabsContent value="order" className="mt-4">
               <ResultTable results={results.order} isLoading={loading} />
             </TabsContent>
-            <TabsContent value="bid" className="mt-4">
-              <ResultTable results={results.bid} isLoading={loading} />
+            <TabsContent value="prespec" className="mt-4">
+              <ResultTable results={results.prespec} isLoading={loading} />
             </TabsContent>
           </Tabs>
         )}

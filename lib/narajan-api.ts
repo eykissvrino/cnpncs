@@ -304,6 +304,55 @@ export async function crawlAllBids(daysBack = 7): Promise<UnifiedResult[]> {
   return allItems;
 }
 
+export async function crawlAllPreSpecs(): Promise<UnifiedResult[]> {
+  const apiKey = getApiKey();
+  try {
+    const first = await fetchWithRetry<ApiResponse<PreSpecItem>>(
+      `${NARAJAN_BASE_URL}/HrcspSsstndrdInfoService/getPublicPrcureThngInfoServcPPSSrch`,
+      { serviceKey: apiKey, type: "json", numOfRows: "100", pageNo: "1" }
+    );
+    const totalCount = first?.response?.body?.totalCount ?? 0;
+    const totalPages = Math.min(Math.ceil(totalCount / 100), 20);
+
+    const allItems: UnifiedResult[] = [];
+    const pages = Array.from({ length: totalPages }, (_, i) => i + 1);
+
+    for (let i = 0; i < pages.length; i += 10) {
+      const batch = pages.slice(i, i + 10);
+      const results = await Promise.allSettled(
+        batch.map((p) =>
+          fetchWithRetry<ApiResponse<PreSpecItem>>(
+            `${NARAJAN_BASE_URL}/HrcspSsstndrdInfoService/getPublicPrcureThngInfoServcPPSSrch`,
+            { serviceKey: apiKey, type: "json", numOfRows: "100", pageNo: String(p) }
+          )
+        )
+      );
+      for (const r of results) {
+        if (r.status === "rejected") continue;
+        const items = parseItems<PreSpecItem>(r.value?.response?.body?.items);
+        for (const item of items) {
+          allItems.push({
+            id: `prespec-${item.bfSpecRgstNo || item.prePriceNo}`,
+            type: "prespec",
+            typeLabel: "사전규격",
+            title: item.prdctClsfcNoNm || "-",
+            agency: item.ntceInsttNm || "-",
+            budget: formatBudget(item.asignBdgtAmt),
+            postDate: item.opninRgstDt?.substring(0, 10) || "-",
+            deadline: item.opninRgstClseDt?.substring(0, 10) || "-",
+            url: item.ntceSpecDocUrl || "",
+            rawData: JSON.stringify(item),
+          });
+        }
+      }
+      if (i + 10 < pages.length) await new Promise((r) => setTimeout(r, 200));
+    }
+    return allItems;
+  } catch {
+    return [];
+  }
+}
+
 export async function crawlAllOrderPlans(): Promise<UnifiedResult[]> {
   const apiKey = getApiKey();
   try {
