@@ -5,10 +5,10 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import ResultTable from "@/components/ResultTable";
 import ExportButton from "@/components/ExportButton";
-import { Search, Star, RefreshCw, Bell, Database, Clock, X } from "lucide-react";
+import { Search, Star, RefreshCw, Bell, Database, Clock, X, Zap, FileText } from "lucide-react";
 import { toast } from "sonner";
 import type { UnifiedResult } from "@/types/narajan";
 
@@ -150,7 +150,6 @@ export default function HomePage() {
     });
   }, []);
 
-  // 전체 아이템 (중복 제거, 날짜순)
   const allDashItems = dashboard
     ? Array.from(
         new Map(
@@ -161,7 +160,6 @@ export default function HomePage() {
       ).sort((a, b) => (b.postDate > a.postDate ? 1 : -1))
     : [];
 
-  // 선택된 키워드 기준 필터링
   const keywordFilteredItems =
     selectedKeywords === null
       ? allDashItems
@@ -174,7 +172,6 @@ export default function HomePage() {
           ).values()
         ).sort((a, b) => (b.postDate > a.postDate ? 1 : -1));
 
-  // 유형 필터 적용
   const filteredDashItems =
     selectedTypes === null
       ? keywordFilteredItems
@@ -203,219 +200,284 @@ export default function HomePage() {
   return (
     <div className="space-y-8">
 
-      {/* ── 섹션 1: 키워드 모니터링 대시보드 ── */}
-      <div>
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h1 className="text-2xl font-bold flex items-center gap-2">
-              <Bell className="h-5 w-5 text-primary" />
-              키워드 모니터링
-            </h1>
-            <p className="text-sm text-muted-foreground mt-1">
-              저장된 키워드에 매칭되는 최신 입찰공고(용역) · 복수 선택 가능
-            </p>
-          </div>
-          <div className="flex items-center gap-3">
-            {dashboard && (
-              <span className="text-xs text-muted-foreground flex items-center gap-1">
-                <Database className="h-3 w-3" />
-                DB {dashboard.dbTotal.toLocaleString()}건
-                <Clock className="h-3 w-3 ml-2" />
-                {timeAgo(dashboard.lastCrawledAt)}
-              </span>
-            )}
-            <Button variant="outline" size="sm" onClick={loadDashboard} disabled={dashLoading}>
-              <RefreshCw className={`h-4 w-4 mr-1 ${dashLoading ? "animate-spin" : ""}`} />
-              새로고침
-            </Button>
-            <Button size="sm" onClick={handleCrawl} disabled={crawling}>
-              <RefreshCw className={`h-4 w-4 mr-1 ${crawling ? "animate-spin" : ""}`} />
-              {crawling ? "크롤링 중..." : "지금 크롤링"}
-            </Button>
-          </div>
-        </div>
-
-        {!dashboard?.keywords.length && !dashLoading ? (
-          <Card>
-            <CardContent className="py-12 text-center text-muted-foreground">
-              <Star className="h-8 w-8 mx-auto mb-3 opacity-30" />
-              <p className="text-sm">저장된 키워드가 없습니다.</p>
-              <p className="text-xs mt-1">아래 검색창에서 키워드를 검색 후 ☆ 저장 버튼을 눌러주세요.</p>
-            </CardContent>
-          </Card>
-        ) : dashLoading ? (
-          <Card>
-            <CardContent className="py-10 text-center text-muted-foreground text-sm">
-              <RefreshCw className="h-5 w-5 mx-auto mb-2 animate-spin" />
-              로딩 중...
-            </CardContent>
-          </Card>
-        ) : dashboard && (
-          <div>
-            {/* 키워드 토글 버튼 (다중 선택) */}
-            <div className="flex flex-wrap gap-2 mb-3">
-              <Button
-                variant={selectedKeywords === null ? "default" : "outline"}
-                size="sm"
-                onClick={() => setSelectedKeywords(null)}
-              >
-                전체
-                <Badge variant="secondary" className="ml-1.5">{allDashItems.length}</Badge>
-                {dashboard.totalNew > 0 && selectedKeywords === null && (
-                  <Badge className="ml-1 bg-red-500 text-white text-[10px] px-1.5 py-0">
-                    NEW {dashboard.totalNew}
-                  </Badge>
-                )}
-              </Button>
-              {dashboard.results.map((r) => {
-                const isSelected = selectedKeywords?.has(r.keywordId) ?? false;
-                return (
-                  <Button
-                    key={r.keywordId}
-                    variant={isSelected ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => toggleKeyword(r.keywordId)}
-                  >
-                    {r.keyword}
-                    <Badge variant="secondary" className="ml-1.5">{r.items.length}</Badge>
-                    {r.newCount > 0 && (
-                      <Badge className="ml-1 bg-red-500 text-white text-[10px] px-1.5 py-0">
-                        {r.newCount}
-                      </Badge>
-                    )}
-                  </Button>
-                );
-              })}
-            </div>
-
-            {/* 유형 필터 */}
-            <div className="flex flex-wrap gap-2 mb-3">
-              {(["bid", "order", "prespec"] as const).map((type) => {
-                const labels: Record<string, string> = { bid: "입찰공고", order: "발주계획", prespec: "사전규격" };
-                const count = keywordFilteredItems.filter((i) => i.type === type).length;
-                const isOn = selectedTypes?.has(type) ?? false;
-                return (
-                  <Button
-                    key={type}
-                    variant={isOn ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => toggleType(type)}
-                  >
-                    {labels[type]}
-                    <Badge variant="secondary" className="ml-1.5">{count}</Badge>
-                  </Button>
-                );
-              })}
-            </div>
-
-            {/* 선택 상태 표시 */}
-            {selectedKeywords !== null && selectedKeywordNames.length > 0 && (
-              <div className="flex items-center gap-2 mb-3 px-3 py-1.5 bg-muted rounded-md text-sm">
-                <span className="text-muted-foreground">선택:</span>
-                <span className="font-medium">{selectedKeywordNames.join(" + ")}</span>
-                <span className="text-muted-foreground">· {filteredDashItems.length}건</span>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-5 w-5 p-0 ml-auto"
-                  onClick={() => setSelectedKeywords(null)}
-                  title="선택 초기화"
-                >
-                  <X className="h-3 w-3" />
-                </Button>
-              </div>
-            )}
-
-            {/* 결과 테이블 */}
-            {filteredDashItems.length === 0 ? (
-              <Card>
-                <CardContent className="py-10 text-center text-muted-foreground text-sm">
-                  {selectedKeywords !== null
-                    ? "선택한 키워드에 매칭되는 입찰공고가 없습니다."
-                    : "저장된 키워드에 매칭되는 입찰공고가 없습니다."}
-                  <br />
-                  <span className="text-xs mt-1 block">&quot;지금 크롤링&quot; 버튼으로 최신 데이터를 가져오세요.</span>
-                </CardContent>
-              </Card>
-            ) : (
-              <ResultTable results={filteredDashItems} isLoading={false} />
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* ── 구분선 ── */}
-      <div className="border-t" />
-
-      {/* ── 섹션 2: 통합 검색 ── */}
-      <div>
-        <div className="mb-4">
-          <h2 className="text-xl font-bold flex items-center gap-2">
-            <Search className="h-5 w-5 text-primary" />
-            통합 검색
-          </h2>
+      {/* ── 페이지 헤더 ── */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-foreground">대시보드</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            사전규격 · 발주계획 · 입찰공고(용역)를 한 번에 검색합니다
+            나라장터 입찰공고 · 발주계획 · 사전규격 통합 모니터링
           </p>
         </div>
-
-        <div className="flex gap-2">
-          <Input
-            placeholder="검색 키워드 입력 (예: AI 시스템, 직무분석)"
-            value={keyword}
-            onChange={(e) => setKeyword(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-            className="max-w-xl"
-          />
-          <Button onClick={handleSearch} disabled={loading}>
-            {loading ? <RefreshCw className="h-4 w-4 mr-2 animate-spin" /> : <Search className="h-4 w-4 mr-2" />}
-            검색
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={loadDashboard} disabled={dashLoading}>
+            <RefreshCw className={`h-4 w-4 mr-1.5 ${dashLoading ? "animate-spin" : ""}`} />
+            새로고침
           </Button>
-          <Button variant="outline" onClick={handleSaveKeyword} disabled={saving || !keyword.trim()} title="키워드 저장">
-            <Star className="h-4 w-4 mr-2" />
-            저장
+          <Button size="sm" onClick={handleCrawl} disabled={crawling}>
+            <Zap className={`h-4 w-4 mr-1.5 ${crawling ? "animate-pulse" : ""}`} />
+            {crawling ? "크롤링 중..." : "지금 크롤링"}
           </Button>
-          <ExportButton keyword={searchedKeyword} disabled={loading || !searchedKeyword} />
         </div>
-
-        {results !== null && (
-          <Tabs defaultValue="all" className="w-full mt-4">
-            <TabsList>
-              <TabsTrigger value="all">
-                전체 <Badge variant="secondary" className="ml-2">{results.total}</Badge>
-              </TabsTrigger>
-              <TabsTrigger value="bid">
-                입찰공고 <Badge variant="secondary" className="ml-2">{results.bid.length}</Badge>
-              </TabsTrigger>
-              <TabsTrigger value="order">
-                발주계획 <Badge variant="secondary" className="ml-2">{results.order.length}</Badge>
-              </TabsTrigger>
-              <TabsTrigger value="prespec">
-                사전규격 <Badge variant="secondary" className="ml-2">{results.prespec.length}</Badge>
-              </TabsTrigger>
-            </TabsList>
-            <TabsContent value="all" className="mt-4">
-              <ResultTable results={[...results.bid, ...results.order, ...results.prespec]} isLoading={loading} />
-            </TabsContent>
-            <TabsContent value="bid" className="mt-4">
-              <ResultTable results={results.bid} isLoading={loading} />
-            </TabsContent>
-            <TabsContent value="order" className="mt-4">
-              <ResultTable results={results.order} isLoading={loading} />
-            </TabsContent>
-            <TabsContent value="prespec" className="mt-4">
-              <ResultTable results={results.prespec} isLoading={loading} />
-            </TabsContent>
-          </Tabs>
-        )}
-
-        {results === null && !loading && (
-          <div className="text-center py-16 text-muted-foreground">
-            <Search className="h-10 w-10 mx-auto mb-3 opacity-20" />
-            <p className="text-base">키워드를 입력하고 검색을 시작하세요</p>
-          </div>
-        )}
       </div>
+
+      {/* ── 통계 카드 ── */}
+      <div className="grid grid-cols-4 gap-4">
+        <Card>
+          <CardContent className="pt-5 pb-5">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs font-medium text-muted-foreground">전체 수집</p>
+                <p className="text-2xl font-bold mt-1">
+                  {dashLoading ? "—" : (dashboard?.dbTotal ?? 0).toLocaleString()}
+                </p>
+                <p className="text-xs text-muted-foreground mt-0.5">건</p>
+              </div>
+              <div className="h-10 w-10 rounded-full bg-blue-100 flex items-center justify-center">
+                <Database className="h-5 w-5 text-blue-600" />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-5 pb-5">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs font-medium text-muted-foreground">신규 항목</p>
+                <p className="text-2xl font-bold mt-1 text-red-600">
+                  {dashLoading ? "—" : (dashboard?.totalNew ?? 0)}
+                </p>
+                <p className="text-xs text-muted-foreground mt-0.5">NEW</p>
+              </div>
+              <div className="h-10 w-10 rounded-full bg-red-100 flex items-center justify-center">
+                <Bell className="h-5 w-5 text-red-600" />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-5 pb-5">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs font-medium text-muted-foreground">모니터링 키워드</p>
+                <p className="text-2xl font-bold mt-1">
+                  {dashLoading ? "—" : (dashboard?.keywords.length ?? 0)}
+                </p>
+                <p className="text-xs text-muted-foreground mt-0.5">개</p>
+              </div>
+              <div className="h-10 w-10 rounded-full bg-amber-100 flex items-center justify-center">
+                <Star className="h-5 w-5 text-amber-600" />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-5 pb-5">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs font-medium text-muted-foreground">최근 수집</p>
+                <p className="text-sm font-semibold mt-1 leading-tight">
+                  {dashLoading ? "—" : timeAgo(dashboard?.lastCrawledAt ?? null)}
+                </p>
+                <p className="text-xs text-muted-foreground mt-0.5">자동 5분 갱신</p>
+              </div>
+              <div className="h-10 w-10 rounded-full bg-emerald-100 flex items-center justify-center">
+                <Clock className="h-5 w-5 text-emerald-600" />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* ── 섹션 1: 키워드 모니터링 대시보드 ── */}
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Bell className="h-4 w-4 text-primary" />
+              키워드 모니터링
+            </CardTitle>
+            <p className="text-xs text-muted-foreground">
+              저장된 키워드에 매칭되는 최신 항목 · 복수 선택 가능
+            </p>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {!dashboard?.keywords.length && !dashLoading ? (
+            <div className="py-12 text-center text-muted-foreground">
+              <Star className="h-8 w-8 mx-auto mb-3 opacity-20" />
+              <p className="text-sm font-medium">저장된 키워드가 없습니다.</p>
+              <p className="text-xs mt-1">아래 검색창에서 키워드를 검색 후 저장 버튼을 눌러주세요.</p>
+            </div>
+          ) : dashLoading ? (
+            <div className="py-10 text-center text-muted-foreground text-sm">
+              <RefreshCw className="h-5 w-5 mx-auto mb-2 animate-spin text-primary" />
+              로딩 중...
+            </div>
+          ) : dashboard && (
+            <div>
+              {/* 키워드 토글 버튼 (다중 선택) */}
+              <div className="flex flex-wrap gap-2 mb-3">
+                <Button
+                  variant={selectedKeywords === null ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setSelectedKeywords(null)}
+                >
+                  전체
+                  <Badge variant="secondary" className="ml-1.5">{allDashItems.length}</Badge>
+                  {dashboard.totalNew > 0 && selectedKeywords === null && (
+                    <Badge className="ml-1 bg-red-500 text-white text-[10px] px-1.5 py-0">
+                      NEW {dashboard.totalNew}
+                    </Badge>
+                  )}
+                </Button>
+                {dashboard.results.map((r) => {
+                  const isSelected = selectedKeywords?.has(r.keywordId) ?? false;
+                  return (
+                    <Button
+                      key={r.keywordId}
+                      variant={isSelected ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => toggleKeyword(r.keywordId)}
+                    >
+                      {r.keyword}
+                      <Badge variant="secondary" className="ml-1.5">{r.items.length}</Badge>
+                      {r.newCount > 0 && (
+                        <Badge className="ml-1 bg-red-500 text-white text-[10px] px-1.5 py-0">
+                          {r.newCount}
+                        </Badge>
+                      )}
+                    </Button>
+                  );
+                })}
+              </div>
+
+              {/* 유형 필터 */}
+              <div className="flex flex-wrap gap-2 mb-3">
+                {(["bid", "order", "prespec"] as const).map((type) => {
+                  const labels: Record<string, string> = { bid: "입찰공고", order: "발주계획", prespec: "사전규격" };
+                  const count = keywordFilteredItems.filter((i) => i.type === type).length;
+                  const isOn = selectedTypes?.has(type) ?? false;
+                  return (
+                    <Button
+                      key={type}
+                      variant={isOn ? "secondary" : "ghost"}
+                      size="sm"
+                      onClick={() => toggleType(type)}
+                      className={isOn ? "bg-primary/10 text-primary hover:bg-primary/20 border border-primary/20" : ""}
+                    >
+                      {labels[type]}
+                      <Badge variant="secondary" className="ml-1.5">{count}</Badge>
+                    </Button>
+                  );
+                })}
+              </div>
+
+              {/* 선택 상태 표시 */}
+              {selectedKeywords !== null && selectedKeywordNames.length > 0 && (
+                <div className="flex items-center gap-2 mb-3 px-3 py-1.5 bg-primary/5 border border-primary/10 rounded-lg text-sm">
+                  <span className="text-muted-foreground">선택:</span>
+                  <span className="font-medium text-primary">{selectedKeywordNames.join(" + ")}</span>
+                  <span className="text-muted-foreground">· {filteredDashItems.length}건</span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-5 w-5 p-0 ml-auto"
+                    onClick={() => setSelectedKeywords(null)}
+                    title="선택 초기화"
+                  >
+                    <X className="h-3 w-3" />
+                  </Button>
+                </div>
+              )}
+
+              {/* 결과 테이블 */}
+              {filteredDashItems.length === 0 ? (
+                <div className="py-10 text-center text-muted-foreground text-sm border rounded-lg bg-muted/20">
+                  {selectedKeywords !== null
+                    ? "선택한 키워드에 매칭되는 항목이 없습니다."
+                    : "저장된 키워드에 매칭되는 항목이 없습니다."}
+                  <br />
+                  <span className="text-xs mt-1 block">&quot;지금 크롤링&quot; 버튼으로 최신 데이터를 가져오세요.</span>
+                </div>
+              ) : (
+                <ResultTable results={filteredDashItems} isLoading={false} />
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* ── 섹션 2: 통합 검색 ── */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Search className="h-4 w-4 text-primary" />
+            통합 검색
+          </CardTitle>
+          <p className="text-xs text-muted-foreground">
+            사전규격 · 발주계획 · 입찰공고(용역)를 한 번에 검색합니다
+          </p>
+        </CardHeader>
+        <CardContent>
+          <div className="flex gap-2">
+            <Input
+              placeholder="검색 키워드 입력 (예: AI 시스템, 직무분석)"
+              value={keyword}
+              onChange={(e) => setKeyword(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleSearch()}
+              className="max-w-xl"
+            />
+            <Button onClick={handleSearch} disabled={loading}>
+              {loading ? <RefreshCw className="h-4 w-4 mr-2 animate-spin" /> : <Search className="h-4 w-4 mr-2" />}
+              검색
+            </Button>
+            <Button variant="outline" onClick={handleSaveKeyword} disabled={saving || !keyword.trim()} title="키워드 저장">
+              <Star className="h-4 w-4 mr-2" />
+              저장
+            </Button>
+            <ExportButton keyword={searchedKeyword} disabled={loading || !searchedKeyword} />
+          </div>
+
+          {results !== null && (
+            <Tabs defaultValue="all" className="w-full mt-5">
+              <TabsList className="bg-muted/50">
+                <TabsTrigger value="all" className="data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-sm">
+                  전체 <Badge variant="secondary" className="ml-2">{results.total}</Badge>
+                </TabsTrigger>
+                <TabsTrigger value="bid" className="data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-sm">
+                  입찰공고 <Badge variant="secondary" className="ml-2">{results.bid.length}</Badge>
+                </TabsTrigger>
+                <TabsTrigger value="order" className="data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-sm">
+                  발주계획 <Badge variant="secondary" className="ml-2">{results.order.length}</Badge>
+                </TabsTrigger>
+                <TabsTrigger value="prespec" className="data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-sm">
+                  사전규격 <Badge variant="secondary" className="ml-2">{results.prespec.length}</Badge>
+                </TabsTrigger>
+              </TabsList>
+              <TabsContent value="all" className="mt-4">
+                <ResultTable results={[...results.bid, ...results.order, ...results.prespec]} isLoading={loading} />
+              </TabsContent>
+              <TabsContent value="bid" className="mt-4">
+                <ResultTable results={results.bid} isLoading={loading} />
+              </TabsContent>
+              <TabsContent value="order" className="mt-4">
+                <ResultTable results={results.order} isLoading={loading} />
+              </TabsContent>
+              <TabsContent value="prespec" className="mt-4">
+                <ResultTable results={results.prespec} isLoading={loading} />
+              </TabsContent>
+            </Tabs>
+          )}
+
+          {results === null && !loading && (
+            <div className="text-center py-16 text-muted-foreground">
+              <FileText className="h-10 w-10 mx-auto mb-3 opacity-20" />
+              <p className="text-base">키워드를 입력하고 검색을 시작하세요</p>
+              <p className="text-xs mt-1">사전규격, 발주계획, 입찰공고를 통합 검색합니다</p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }
