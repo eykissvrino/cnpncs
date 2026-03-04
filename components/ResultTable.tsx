@@ -89,7 +89,7 @@ export default function ResultTable({ results, isLoading }: ResultTableProps) {
               <TableCell className="text-center">
                 {(() => {
                   let url = item.url;
-                  if (!url && item.type === "order") {
+                  if (item.type === "order") {
                     try {
                       const raw = JSON.parse(item.rawData || "{}");
                       if (raw.bizNm) {
