@@ -141,42 +141,62 @@ export async function searchBidAnnouncements(
 
 // ────────────────────────────────────────────────
 // 사전규격
-// API: HrcspSsstndrdInfoService (현재 API키로 접근 불가 → 빈 결과 반환)
+// API: HrcspSsstndrdInfoService
+// 물품(Thng), 용역(Servc), 공사(Cnstwk), 외자(Frgcpt) 4종 엔드포인트
 // ────────────────────────────────────────────────
+const PRESPEC_ENDPOINTS = [
+  "HrcspSsstndrdInfoService/getPublicPrcureThngInfoServcPPSSrch",   // 물품
+  "HrcspSsstndrdInfoService/getPublicPrcureServcInfoServcPPSSrch",  // 용역
+  "HrcspSsstndrdInfoService/getPublicPrcureCnstwkInfoServcPPSSrch", // 공사
+  "HrcspSsstndrdInfoService/getPublicPrcureFrgcptInfoServcPPSSrch", // 외자
+];
+
+function mapPreSpecItem(item: PreSpecItem): UnifiedResult {
+  return {
+    id: `prespec-${item.bfSpecRgstNo || item.prePriceNo}`,
+    type: "prespec" as const,
+    typeLabel: "사전규격",
+    title: item.prdctClsfcNoNm || "-",
+    agency: item.ntceInsttNm || "-",
+    budget: formatBudget(item.asignBdgtAmt),
+    postDate: item.opninRgstDt?.substring(0, 10) || "-",
+    deadline: item.opninRgstClseDt?.substring(0, 10) || "-",
+    url: item.ntceSpecDocUrl || "",
+    rawData: JSON.stringify(item),
+  };
+}
+
 export async function searchPreSpecs(
   keyword: string,
   page = 1
 ): Promise<UnifiedResult[]> {
   const apiKey = getApiKey();
-  try {
-    const data = await fetchWithRetry<ApiResponse<PreSpecItem>>(
-      `${NARAJAN_BASE_URL}/HrcspSsstndrdInfoService/getPublicPrcureThngInfoServcPPSSrch`,
-      {
-        serviceKey: apiKey,
-        type: "json",
-        numOfRows: "100",
-        pageNo: String(page),
-        prdctClsfcNoNm: keyword,
-      }
-    );
-    const body = data?.response?.body;
-    if (!body || body.totalCount === 0) return [];
+  const results = await Promise.allSettled(
+    PRESPEC_ENDPOINTS.map((endpoint) =>
+      fetchWithRetry<ApiResponse<PreSpecItem>>(
+        `${NARAJAN_BASE_URL}/${endpoint}`,
+        {
+          serviceKey: apiKey,
+          type: "json",
+          numOfRows: "100",
+          pageNo: String(page),
+          prdctClsfcNoNm: keyword,
+        }
+      )
+    )
+  );
+
+  const items: UnifiedResult[] = [];
+  for (const result of results) {
+    if (result.status === "rejected") continue;
+    const body = result.value?.response?.body;
+    if (!body || body.totalCount === 0) continue;
     const rawItems = parseItems<PreSpecItem>(body.items);
-    return rawItems.map((item) => ({
-      id: `prespec-${item.bfSpecRgstNo || item.prePriceNo}`,
-      type: "prespec" as const,
-      typeLabel: "사전규격",
-      title: item.prdctClsfcNoNm || "-",
-      agency: item.ntceInsttNm || "-",
-      budget: formatBudget(item.asignBdgtAmt),
-      postDate: item.opninRgstDt?.substring(0, 10) || "-",
-      deadline: item.opninRgstClseDt?.substring(0, 10) || "-",
-      url: item.ntceSpecDocUrl || "",
-      rawData: JSON.stringify(item),
-    }));
-  } catch {
-    return [];
+    for (const item of rawItems) {
+      items.push(mapPreSpecItem(item));
+    }
   }
+  return items;
 }
 
 // ────────────────────────────────────────────────
@@ -306,51 +326,52 @@ export async function crawlAllBids(daysBack = 7): Promise<UnifiedResult[]> {
 
 export async function crawlAllPreSpecs(): Promise<UnifiedResult[]> {
   const apiKey = getApiKey();
-  try {
-    const first = await fetchWithRetry<ApiResponse<PreSpecItem>>(
-      `${NARAJAN_BASE_URL}/HrcspSsstndrdInfoService/getPublicPrcureThngInfoServcPPSSrch`,
-      { serviceKey: apiKey, type: "json", numOfRows: "100", pageNo: "1" }
-    );
-    const totalCount = first?.response?.body?.totalCount ?? 0;
-    const totalPages = Math.min(Math.ceil(totalCount / 100), 20);
+  const allItems: UnifiedResult[] = [];
 
-    const allItems: UnifiedResult[] = [];
-    const pages = Array.from({ length: totalPages }, (_, i) => i + 1);
-
-    for (let i = 0; i < pages.length; i += 10) {
-      const batch = pages.slice(i, i + 10);
-      const results = await Promise.allSettled(
-        batch.map((p) =>
-          fetchWithRetry<ApiResponse<PreSpecItem>>(
-            `${NARAJAN_BASE_URL}/HrcspSsstndrdInfoService/getPublicPrcureThngInfoServcPPSSrch`,
-            { serviceKey: apiKey, type: "json", numOfRows: "100", pageNo: String(p) }
-          )
-        )
+  for (const endpoint of PRESPEC_ENDPOINTS) {
+    try {
+      const first = await fetchWithRetry<ApiResponse<PreSpecItem>>(
+        `${NARAJAN_BASE_URL}/${endpoint}`,
+        { serviceKey: apiKey, type: "json", numOfRows: "100", pageNo: "1" }
       );
-      for (const r of results) {
-        if (r.status === "rejected") continue;
-        const items = parseItems<PreSpecItem>(r.value?.response?.body?.items);
-        for (const item of items) {
-          allItems.push({
-            id: `prespec-${item.bfSpecRgstNo || item.prePriceNo}`,
-            type: "prespec",
-            typeLabel: "사전규격",
-            title: item.prdctClsfcNoNm || "-",
-            agency: item.ntceInsttNm || "-",
-            budget: formatBudget(item.asignBdgtAmt),
-            postDate: item.opninRgstDt?.substring(0, 10) || "-",
-            deadline: item.opninRgstClseDt?.substring(0, 10) || "-",
-            url: item.ntceSpecDocUrl || "",
-            rawData: JSON.stringify(item),
-          });
-        }
+      const totalCount = first?.response?.body?.totalCount ?? 0;
+      if (totalCount === 0) continue;
+      const totalPages = Math.min(Math.ceil(totalCount / 100), 20);
+
+      // 첫 페이지 데이터 먼저 처리
+      const firstItems = parseItems<PreSpecItem>(first?.response?.body?.items);
+      for (const item of firstItems) {
+        allItems.push(mapPreSpecItem(item));
       }
-      if (i + 10 < pages.length) await new Promise((r) => setTimeout(r, 200));
+
+      // 나머지 페이지
+      const pages = Array.from({ length: totalPages - 1 }, (_, i) => i + 2);
+      for (let i = 0; i < pages.length; i += 10) {
+        const batch = pages.slice(i, i + 10);
+        const results = await Promise.allSettled(
+          batch.map((p) =>
+            fetchWithRetry<ApiResponse<PreSpecItem>>(
+              `${NARAJAN_BASE_URL}/${endpoint}`,
+              { serviceKey: apiKey, type: "json", numOfRows: "100", pageNo: String(p) }
+            )
+          )
+        );
+        for (const r of results) {
+          if (r.status === "rejected") continue;
+          const items = parseItems<PreSpecItem>(r.value?.response?.body?.items);
+          for (const item of items) {
+            allItems.push(mapPreSpecItem(item));
+          }
+        }
+        if (i + 10 < pages.length) await new Promise((r) => setTimeout(r, 200));
+      }
+    } catch {
+      // 엔드포인트 실패 시 다음 엔드포인트 진행
     }
-    return allItems;
-  } catch {
-    return [];
+    // 엔드포인트 간 300ms 대기
+    await new Promise((r) => setTimeout(r, 300));
   }
+  return allItems;
 }
 
 export async function crawlAllOrderPlans(): Promise<UnifiedResult[]> {

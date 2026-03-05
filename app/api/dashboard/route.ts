@@ -14,7 +14,7 @@ export async function GET() {
       keywords.map(async (kw) => {
         const items = await prisma.crawlResult.findMany({
           where: {
-            type: { in: ["bid", "order"] },
+            type: { in: ["bid", "order", "prespec"] },
             OR: [
               { title: { contains: kw.name } },
               { agency: { contains: kw.name } },
