@@ -61,17 +61,17 @@ export default function ResultTable({ results, isLoading }: ResultTableProps) {
   }
 
   return (
-    <div className="rounded-lg border overflow-auto shadow-sm">
-      <Table>
+    <div className="rounded-lg border shadow-sm">
+      <Table className="table-fixed w-full">
         <TableHeader>
           <TableRow className="bg-muted/30 hover:bg-muted/30">
-            <TableHead className="w-24 font-semibold text-xs uppercase tracking-wide">유형</TableHead>
-            <TableHead className="w-44 font-semibold text-xs uppercase tracking-wide">기관명</TableHead>
+            <TableHead className="w-[72px] font-semibold text-xs uppercase tracking-wide">유형</TableHead>
+            <TableHead className="w-[120px] font-semibold text-xs uppercase tracking-wide">기관명</TableHead>
             <TableHead className="font-semibold text-xs uppercase tracking-wide">사업명</TableHead>
-            <TableHead className="w-28 text-right font-semibold text-xs uppercase tracking-wide">예산</TableHead>
-            <TableHead className="w-24 text-center font-semibold text-xs uppercase tracking-wide">등록일</TableHead>
-            <TableHead className="w-24 text-center font-semibold text-xs uppercase tracking-wide">마감일</TableHead>
-            <TableHead className="w-12 text-center font-semibold text-xs uppercase tracking-wide">링크</TableHead>
+            <TableHead className="w-[90px] text-right font-semibold text-xs uppercase tracking-wide">예산</TableHead>
+            <TableHead className="w-[80px] text-center font-semibold text-xs uppercase tracking-wide">등록일</TableHead>
+            <TableHead className="w-[80px] text-center font-semibold text-xs uppercase tracking-wide">마감일</TableHead>
+            <TableHead className="w-[44px] text-center font-semibold text-xs uppercase tracking-wide">링크</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -100,13 +100,13 @@ export default function ResultTable({ results, isLoading }: ResultTableProps) {
                     )}
                   </span>
                 </TableCell>
-                <TableCell className="text-sm text-muted-foreground max-w-[176px] truncate">
+                <TableCell className="text-sm text-muted-foreground truncate overflow-hidden" title={item.agency}>
                   {item.agency}
                 </TableCell>
-                <TableCell className="font-medium text-sm text-foreground">
+                <TableCell className="font-medium text-sm text-foreground truncate overflow-hidden" title={item.title}>
                   {item.title}
                 </TableCell>
-                <TableCell className="text-right text-sm font-mono text-foreground">
+                <TableCell className="text-right text-sm font-mono text-foreground whitespace-nowrap">
                   {item.budget}
                 </TableCell>
                 <TableCell className="text-center text-xs text-muted-foreground whitespace-nowrap">
