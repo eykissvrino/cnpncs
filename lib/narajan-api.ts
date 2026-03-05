@@ -144,11 +144,13 @@ export async function searchBidAnnouncements(
 // API: HrcspSsstndrdInfoService
 // 물품(Thng), 용역(Servc), 공사(Cnstwk), 외자(Frgcpt) 4종 엔드포인트
 // ────────────────────────────────────────────────
+// 공식 문서(data.go.kr 15129437) 기준 엔드포인트
+// Base URL: https://apis.data.go.kr/1230000/ao/HrcspSsstndrdInfoService
 const PRESPEC_ENDPOINTS = [
-  "HrcspSsstndrdInfoService/getPublicPrcureThngInfoServcPPSSrch",   // 물품
-  "HrcspSsstndrdInfoService/getPublicPrcureServcInfoServcPPSSrch",  // 용역
-  "HrcspSsstndrdInfoService/getPublicPrcureCnstwkInfoServcPPSSrch", // 공사
-  "HrcspSsstndrdInfoService/getPublicPrcureFrgcptInfoServcPPSSrch", // 외자
+  "HrcspSsstndrdInfoService/getPublicPrcureThngInfoThng",     // 물품 사전규격 목록
+  "HrcspSsstndrdInfoService/getPublicPrcureThngInfoServc",    // 용역 사전규격 목록
+  "HrcspSsstndrdInfoService/getPublicPrcureThngInfoCnstwk",   // 공사 사전규격 목록
+  "HrcspSsstndrdInfoService/getPublicPrcureThngInfoFrgcpt",   // 외자 사전규격 목록
 ];
 
 function mapPreSpecItem(item: PreSpecItem): UnifiedResult {
@@ -166,29 +168,44 @@ function mapPreSpecItem(item: PreSpecItem): UnifiedResult {
   };
 }
 
+// 검색용 PPSSrch 엔드포인트
+const PRESPEC_SEARCH_ENDPOINTS = [
+  "HrcspSsstndrdInfoService/getPublicPrcureThngInfoThngPPSSrch",     // 물품
+  "HrcspSsstndrdInfoService/getPublicPrcureThngInfoServcPPSSrch",    // 용역
+  "HrcspSsstndrdInfoService/getPublicPrcureThngInfoCnstwkPPSSrch",   // 공사
+  "HrcspSsstndrdInfoService/getPublicPrcureThngInfoFrgcptPPSSrch",   // 외자
+];
+
 export async function searchPreSpecs(
   keyword: string,
   page = 1
 ): Promise<UnifiedResult[]> {
   const apiKey = getApiKey();
   const results = await Promise.allSettled(
-    PRESPEC_ENDPOINTS.map((endpoint) =>
-      fetchWithRetry<ApiResponse<PreSpecItem>>(
-        `${NARAJAN_BASE_URL}/${endpoint}`,
-        {
-          serviceKey: apiKey,
-          type: "json",
-          numOfRows: "100",
-          pageNo: String(page),
-          prdctClsfcNoNm: keyword,
-        }
-      )
-    )
+    PRESPEC_SEARCH_ENDPOINTS.map((endpoint) => {
+      const url = `${NARAJAN_BASE_URL}/${endpoint}`;
+      console.log(`[사전규격 검색] ${url}`);
+      return fetchWithRetry<ApiResponse<PreSpecItem>>(url, {
+        serviceKey: apiKey,
+        type: "json",
+        numOfRows: "100",
+        pageNo: String(page),
+        prdctClsfcNoNm: keyword,
+      });
+    })
   );
 
   const items: UnifiedResult[] = [];
   for (const result of results) {
-    if (result.status === "rejected") continue;
+    if (result.status === "rejected") {
+      console.error("[사전규격 검색 실패]", (result.reason as Error)?.message);
+      continue;
+    }
+    const header = result.value?.response?.header;
+    if (header && header.resultCode !== "00") {
+      console.error(`[사전규격 API 오류] code=${header.resultCode} msg=${header.resultMsg}`);
+      continue;
+    }
     const body = result.value?.response?.body;
     if (!body || body.totalCount === 0) continue;
     const rawItems = parseItems<PreSpecItem>(body.items);
@@ -329,12 +346,23 @@ export async function crawlAllPreSpecs(): Promise<UnifiedResult[]> {
   const allItems: UnifiedResult[] = [];
 
   for (const endpoint of PRESPEC_ENDPOINTS) {
+    const url = `${NARAJAN_BASE_URL}/${endpoint}`;
     try {
+      console.log(`[사전규격 크롤링] 시작: ${url}`);
       const first = await fetchWithRetry<ApiResponse<PreSpecItem>>(
-        `${NARAJAN_BASE_URL}/${endpoint}`,
+        url,
         { serviceKey: apiKey, type: "json", numOfRows: "100", pageNo: "1" }
       );
+
+      // API 응답 헤더 확인
+      const header = first?.response?.header;
+      if (header && header.resultCode !== "00") {
+        console.error(`[사전규격 크롤링 오류] ${endpoint}: code=${header.resultCode} msg=${header.resultMsg}`);
+        continue;
+      }
+
       const totalCount = first?.response?.body?.totalCount ?? 0;
+      console.log(`[사전규격 크롤링] ${endpoint}: totalCount=${totalCount}`);
       if (totalCount === 0) continue;
       const totalPages = Math.min(Math.ceil(totalCount / 100), 20);
 
@@ -351,7 +379,7 @@ export async function crawlAllPreSpecs(): Promise<UnifiedResult[]> {
         const results = await Promise.allSettled(
           batch.map((p) =>
             fetchWithRetry<ApiResponse<PreSpecItem>>(
-              `${NARAJAN_BASE_URL}/${endpoint}`,
+              url,
               { serviceKey: apiKey, type: "json", numOfRows: "100", pageNo: String(p) }
             )
           )
@@ -365,12 +393,13 @@ export async function crawlAllPreSpecs(): Promise<UnifiedResult[]> {
         }
         if (i + 10 < pages.length) await new Promise((r) => setTimeout(r, 200));
       }
-    } catch {
-      // 엔드포인트 실패 시 다음 엔드포인트 진행
+    } catch (error) {
+      console.error(`[사전규격 크롤링 실패] ${endpoint}:`, (error as Error)?.message);
     }
     // 엔드포인트 간 300ms 대기
     await new Promise((r) => setTimeout(r, 300));
   }
+  console.log(`[사전규격 크롤링 완료] 총 ${allItems.length}건`);
   return allItems;
 }
 
