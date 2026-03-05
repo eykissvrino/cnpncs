@@ -35,7 +35,7 @@ const EMPTY: SubscriberFormData = {
   name: "",
   department: "",
   email: "",
-  schedule: "immediate",
+  schedule: "weekday",
   keywords: "",
   active: true,
 };
@@ -112,9 +112,10 @@ export default function SubscriberDialog({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
+                <SelectItem value="weekday">평일 오전 9시</SelectItem>
+                <SelectItem value="daily">매일 오전 9시</SelectItem>
+                <SelectItem value="weekly">매주 월요일 오전 9시</SelectItem>
                 <SelectItem value="immediate">즉시 (발견 시 바로)</SelectItem>
-                <SelectItem value="daily">매일 (오전 9시 요약)</SelectItem>
-                <SelectItem value="weekly">매주 (월요일 오전 9시)</SelectItem>
               </SelectContent>
             </Select>
           </div>

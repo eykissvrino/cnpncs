@@ -260,7 +260,7 @@ export async function sendSubscriberNotifications(
 }
 
 export async function sendDigestNotifications(
-  scheduleType: "daily" | "weekly"
+  scheduleType: "weekday" | "daily" | "weekly"
 ): Promise<{ sent: number; errors: string[] }> {
   const errors: string[] = [];
   let sent = 0;
@@ -275,7 +275,7 @@ export async function sendDigestNotifications(
 
   if (subscribers.length === 0) return { sent: 0, errors: [] };
 
-  const daysBack = scheduleType === "daily" ? 1 : 7;
+  const daysBack = scheduleType === "weekly" ? 7 : 1;
   const since = new Date();
   since.setDate(since.getDate() - daysBack);
 
@@ -288,7 +288,8 @@ export async function sendDigestNotifications(
   if (recentResults.length === 0) return { sent: 0, errors: [] };
 
   const transporter = getTransporter();
-  const periodLabel = scheduleType === "daily" ? "일일" : "주간";
+  const periodLabels: Record<string, string> = { weekday: "평일", daily: "일일", weekly: "주간" };
+  const periodLabel = periodLabels[scheduleType] ?? scheduleType;
 
   for (const sub of subscribers) {
     try {

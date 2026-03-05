@@ -29,9 +29,10 @@ interface SubscriberTableProps {
 }
 
 const SCHEDULE_LABELS: Record<string, string> = {
+  weekday: "평일 9시",
+  daily: "매일 9시",
+  weekly: "매주 월",
   immediate: "즉시",
-  daily: "매일",
-  weekly: "매주",
 };
 
 export default function SubscriberTable({ subscribers, onEdit, onDelete }: SubscriberTableProps) {

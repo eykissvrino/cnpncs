@@ -43,7 +43,7 @@ export const subscriberCreateSchema = z.object({
   name: z.string().min(1, "이름을 입력해주세요").max(50),
   department: z.string().min(1, "소속을 입력해주세요").max(100),
   email: z.string().email("올바른 이메일을 입력해주세요"),
-  schedule: z.enum(["immediate", "daily", "weekly"]).default("immediate"),
+  schedule: z.enum(["immediate", "weekday", "daily", "weekly"]).default("weekday"),
   keywords: z.string().max(500).default(""),
   active: z.boolean().default(true),
 });
@@ -53,7 +53,7 @@ export const subscriberUpdateSchema = z.object({
   name: z.string().min(1).max(50).optional(),
   department: z.string().min(1).max(100).optional(),
   email: z.string().email().optional(),
-  schedule: z.enum(["immediate", "daily", "weekly"]).optional(),
+  schedule: z.enum(["immediate", "weekday", "daily", "weekly"]).optional(),
   keywords: z.string().max(500).optional(),
   active: z.boolean().optional(),
 });

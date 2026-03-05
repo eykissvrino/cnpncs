@@ -164,12 +164,13 @@ export function startScheduler(): void {
     }
   });
 
-  // 매일 오전 9시 daily digest
+  // 평일 오전 9시 weekday digest (월~금)
   if (dailyDigestTask) dailyDigestTask.stop();
-  dailyDigestTask = cron.schedule("0 9 * * *", async () => {
-    console.log(`[scheduler] daily digest 시작: ${new Date().toISOString()}`);
-    const result = await sendDigestNotifications("daily");
-    console.log(`[scheduler] daily digest: ${result.sent}명 발송`);
+  dailyDigestTask = cron.schedule("0 9 * * 1-5", async () => {
+    console.log(`[scheduler] weekday/daily digest 시작: ${new Date().toISOString()}`);
+    const weekdayResult = await sendDigestNotifications("weekday");
+    const dailyResult = await sendDigestNotifications("daily");
+    console.log(`[scheduler] weekday: ${weekdayResult.sent}명, daily: ${dailyResult.sent}명 발송`);
   });
 
   // 매주 월요일 오전 9시 weekly digest
@@ -180,7 +181,7 @@ export function startScheduler(): void {
     console.log(`[scheduler] weekly digest: ${result.sent}명 발송`);
   });
 
-  console.log(`[scheduler] 스케줄러 등록됨: ${schedule} (+ daily 09:00, weekly Mon 09:00)`);
+  console.log(`[scheduler] 스케줄러 등록됨: ${schedule} (+ weekday/daily 09:00 월~금, weekly Mon 09:00)`);
 }
 
 export function stopScheduler(): void {
