@@ -7,6 +7,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import ResultTable from "@/components/ResultTable";
+import ResultDetailSheet from "@/components/ResultDetailSheet";
+import CrawlProgress from "@/components/CrawlProgress";
 import ExportButton from "@/components/ExportButton";
 import { Search, Star, RefreshCw, Bell, Database, Clock, X, Zap, FileText } from "lucide-react";
 import { toast } from "sonner";
@@ -58,6 +60,15 @@ export default function HomePage() {
   const [results, setResults] = useState<SearchResults | null>(null);
   const [saving, setSaving] = useState(false);
 
+  // 상세보기
+  const [selectedItem, setSelectedItem] = useState<(UnifiedResult & { isNew?: boolean }) | null>(null);
+  const [sheetOpen, setSheetOpen] = useState(false);
+
+  const handleRowClick = useCallback((item: UnifiedResult & { isNew?: boolean }) => {
+    setSelectedItem(item);
+    setSheetOpen(true);
+  }, []);
+
   const loadDashboard = useCallback(async () => {
     setDashLoading(true);
     try {
@@ -80,7 +91,6 @@ export default function HomePage() {
 
   const handleCrawl = async () => {
     setCrawling(true);
-    toast.info("크롤링 시작... (수 분 소요, 30일치 수집)");
     try {
       const res = await fetch("/api/cron");
       const data = await res.json() as { newCount?: number; errors?: string[] };
@@ -201,7 +211,7 @@ export default function HomePage() {
     <div className="space-y-8">
 
       {/* ── 페이지 헤더 ── */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-foreground">대시보드</h1>
           <p className="text-sm text-muted-foreground mt-1">
@@ -211,7 +221,7 @@ export default function HomePage() {
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" onClick={loadDashboard} disabled={dashLoading}>
             <RefreshCw className={`h-4 w-4 mr-1.5 ${dashLoading ? "animate-spin" : ""}`} />
-            새로고침
+            <span className="hidden sm:inline">새로고침</span>
           </Button>
           <Button size="sm" onClick={handleCrawl} disabled={crawling}>
             <Zap className={`h-4 w-4 mr-1.5 ${crawling ? "animate-pulse" : ""}`} />
@@ -220,8 +230,11 @@ export default function HomePage() {
         </div>
       </div>
 
+      {/* ── 크롤링 진행률 ── */}
+      <CrawlProgress isActive={crawling} />
+
       {/* ── 통계 카드 ── */}
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <Card>
           <CardContent className="pt-5 pb-5">
             <div className="flex items-center justify-between">
@@ -291,7 +304,7 @@ export default function HomePage() {
       {/* ── 섹션 1: 키워드 모니터링 대시보드 ── */}
       <Card>
         <CardHeader className="pb-3">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
             <CardTitle className="text-base flex items-center gap-2">
               <Bell className="h-4 w-4 text-primary" />
               키워드 모니터링
@@ -400,7 +413,7 @@ export default function HomePage() {
                   <span className="text-xs mt-1 block">&quot;지금 크롤링&quot; 버튼으로 최신 데이터를 가져오세요.</span>
                 </div>
               ) : (
-                <ResultTable results={filteredDashItems} isLoading={false} />
+                <ResultTable results={filteredDashItems} isLoading={false} onRowClick={handleRowClick} />
               )}
             </div>
           )}
@@ -419,52 +432,54 @@ export default function HomePage() {
           </p>
         </CardHeader>
         <CardContent>
-          <div className="flex gap-2">
+          <div className="flex flex-col sm:flex-row gap-2">
             <Input
               placeholder="검색 키워드 입력 (예: AI 시스템, 직무분석)"
               value={keyword}
               onChange={(e) => setKeyword(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-              className="max-w-xl"
+              className="sm:max-w-xl"
             />
-            <Button onClick={handleSearch} disabled={loading}>
-              {loading ? <RefreshCw className="h-4 w-4 mr-2 animate-spin" /> : <Search className="h-4 w-4 mr-2" />}
-              검색
-            </Button>
-            <Button variant="outline" onClick={handleSaveKeyword} disabled={saving || !keyword.trim()} title="키워드 저장">
-              <Star className="h-4 w-4 mr-2" />
-              저장
-            </Button>
-            <ExportButton keyword={searchedKeyword} disabled={loading || !searchedKeyword} />
+            <div className="flex gap-2">
+              <Button onClick={handleSearch} disabled={loading} className="flex-1 sm:flex-none">
+                {loading ? <RefreshCw className="h-4 w-4 mr-2 animate-spin" /> : <Search className="h-4 w-4 mr-2" />}
+                검색
+              </Button>
+              <Button variant="outline" onClick={handleSaveKeyword} disabled={saving || !keyword.trim()} title="키워드 저장">
+                <Star className="h-4 w-4 sm:mr-2" />
+                <span className="hidden sm:inline">저장</span>
+              </Button>
+              <ExportButton keyword={searchedKeyword} disabled={loading || !searchedKeyword} />
+            </div>
           </div>
 
           {results !== null && (
             <Tabs defaultValue="all" className="w-full mt-5">
-              <TabsList className="bg-muted/50">
+              <TabsList className="bg-muted/50 w-full sm:w-auto">
                 <TabsTrigger value="all" className="data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-sm">
                   전체 <Badge variant="secondary" className="ml-2">{results.total}</Badge>
                 </TabsTrigger>
                 <TabsTrigger value="bid" className="data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-sm">
-                  입찰공고 <Badge variant="secondary" className="ml-2">{results.bid.length}</Badge>
+                  입찰 <Badge variant="secondary" className="ml-2">{results.bid.length}</Badge>
                 </TabsTrigger>
                 <TabsTrigger value="order" className="data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-sm">
-                  발주계획 <Badge variant="secondary" className="ml-2">{results.order.length}</Badge>
+                  발주 <Badge variant="secondary" className="ml-2">{results.order.length}</Badge>
                 </TabsTrigger>
                 <TabsTrigger value="prespec" className="data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-sm">
-                  사전규격 <Badge variant="secondary" className="ml-2">{results.prespec.length}</Badge>
+                  사전 <Badge variant="secondary" className="ml-2">{results.prespec.length}</Badge>
                 </TabsTrigger>
               </TabsList>
               <TabsContent value="all" className="mt-4">
-                <ResultTable results={[...results.bid, ...results.order, ...results.prespec]} isLoading={loading} />
+                <ResultTable results={[...results.bid, ...results.order, ...results.prespec]} isLoading={loading} onRowClick={handleRowClick} />
               </TabsContent>
               <TabsContent value="bid" className="mt-4">
-                <ResultTable results={results.bid} isLoading={loading} />
+                <ResultTable results={results.bid} isLoading={loading} onRowClick={handleRowClick} />
               </TabsContent>
               <TabsContent value="order" className="mt-4">
-                <ResultTable results={results.order} isLoading={loading} />
+                <ResultTable results={results.order} isLoading={loading} onRowClick={handleRowClick} />
               </TabsContent>
               <TabsContent value="prespec" className="mt-4">
-                <ResultTable results={results.prespec} isLoading={loading} />
+                <ResultTable results={results.prespec} isLoading={loading} onRowClick={handleRowClick} />
               </TabsContent>
             </Tabs>
           )}
@@ -478,6 +493,9 @@ export default function HomePage() {
           )}
         </CardContent>
       </Card>
+
+      {/* ── 결과 상세보기 시트 ── */}
+      <ResultDetailSheet item={selectedItem} open={sheetOpen} onOpenChange={setSheetOpen} />
     </div>
   );
 }

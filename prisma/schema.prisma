@@ -47,3 +47,15 @@ model Settings {
   slackEnabled Boolean @default(false)
   cronSchedule String  @default("0 */2 * * *")
 }
+
+model Subscriber {
+  id         Int      @id @default(autoincrement())
+  name       String
+  department String
+  email      String   @unique
+  schedule   String   @default("immediate")
+  keywords   String   @default("")
+  active     Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}

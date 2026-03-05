@@ -1,18 +1,28 @@
 import { NextRequest, NextResponse } from "next/server";
-import { sendEmailNotification, sendSlackNotification } from "@/lib/notify";
+import { sendEmailNotification, sendSubscriberNotifications } from "@/lib/notify";
 import { prisma } from "@/lib/db";
-import type { CrawlResult } from "@prisma/client";
+import { rateLimit } from "@/lib/rate-limit";
+import { notifyRequestSchema } from "@/lib/validators";
 
 export async function POST(request: NextRequest) {
-  try {
-    const { type, results } = await request.json() as {
-      type: "email" | "slack" | "all";
-      results?: CrawlResult[];
-    };
+  const ip = request.headers.get("x-forwarded-for") || "unknown";
+  const { allowed } = rateLimit(`notify:${ip}`, 5, 60_000);
+  if (!allowed) {
+    return NextResponse.json({ error: "요청이 너무 빈번합니다. 잠시 후 다시 시도해주세요." }, { status: 429 });
+  }
 
-    // results가 없으면 미알림 항목 조회
+  try {
+    const body = await request.json();
+    const parsed = notifyRequestSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: parsed.error.issues[0]?.message || "잘못된 요청입니다." },
+        { status: 400 }
+      );
+    }
+
     const toNotify =
-      results ||
+      parsed.data.results ||
       (await prisma.crawlResult.findMany({
         where: { notified: false, isNew: true },
         take: 50,
@@ -23,23 +33,28 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ message: "알림할 신규 항목이 없습니다.", sent: 0 });
     }
 
-    const results_: { email?: boolean; slack?: boolean } = {};
+    const notifyResults: { email?: boolean; subscribers?: { sent: number; errors: string[] } } = {};
 
-    if (type === "email" || type === "all") {
-      results_.email = await sendEmailNotification(toNotify);
-    }
-    if (type === "slack" || type === "all") {
-      results_.slack = await sendSlackNotification(toNotify);
+    // 글로벌 이메일 알림 (기존 호환)
+    if (parsed.data.type === "email" || parsed.data.type === "all") {
+      notifyResults.email = await sendEmailNotification(toNotify);
     }
 
-    if (results_.email || results_.slack) {
+    // 구독자별 알림
+    notifyResults.subscribers = await sendSubscriberNotifications(toNotify);
+
+    if (notifyResults.email || (notifyResults.subscribers?.sent ?? 0) > 0) {
       await prisma.crawlResult.updateMany({
         where: { id: { in: toNotify.map((r) => r.id) } },
         data: { notified: true },
       });
     }
 
-    return NextResponse.json({ success: true, sent: toNotify.length, results: results_ });
+    return NextResponse.json({
+      success: true,
+      sent: toNotify.length,
+      results: notifyResults,
+    });
   } catch (error) {
     const msg = error instanceof Error ? error.message : "알림 전송 실패";
     return NextResponse.json({ error: msg }, { status: 500 });

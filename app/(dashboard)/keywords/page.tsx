@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import DeleteConfirmDialog from "@/components/DeleteConfirmDialog";
 import { Plus, Trash2, RefreshCw, Tag, Database } from "lucide-react";
 import { toast } from "sonner";
 
@@ -24,6 +25,9 @@ export default function KeywordsPage() {
   const [newKeyword, setNewKeyword] = useState("");
   const [adding, setAdding] = useState(false);
   const [crawling, setCrawling] = useState(false);
+
+  // 삭제 확인 다이얼로그
+  const [deleteTarget, setDeleteTarget] = useState<{ id: number; name: string } | null>(null);
 
   const fetchKeywords = async () => {
     try {
@@ -78,15 +82,17 @@ export default function KeywordsPage() {
     }
   };
 
-  const handleDelete = async (id: number, name: string) => {
-    if (!confirm(`'${name}' 키워드를 삭제하시겠습니까? 관련 크롤링 데이터도 함께 삭제됩니다.`)) return;
+  const handleDeleteConfirm = async () => {
+    if (!deleteTarget) return;
     try {
-      const res = await fetch(`/api/keywords?id=${id}`, { method: "DELETE" });
+      const res = await fetch(`/api/keywords?id=${deleteTarget.id}`, { method: "DELETE" });
       if (!res.ok) throw new Error("삭제 실패");
-      toast.success(`'${name}' 키워드가 삭제되었습니다.`);
+      toast.success(`'${deleteTarget.name}' 키워드가 삭제되었습니다.`);
       await fetchKeywords();
     } catch {
       toast.error("키워드 삭제 실패");
+    } finally {
+      setDeleteTarget(null);
     }
   };
 
@@ -112,7 +118,7 @@ export default function KeywordsPage() {
   return (
     <div className="space-y-6">
       {/* 페이지 헤더 */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-foreground">키워드 관리</h1>
           <p className="text-sm text-muted-foreground mt-1">
@@ -126,7 +132,7 @@ export default function KeywordsPage() {
       </div>
 
       {/* 요약 통계 */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <Card>
           <CardContent className="pt-4 pb-4">
             <div className="flex items-center gap-3">
@@ -186,11 +192,11 @@ export default function KeywordsPage() {
               value={newKeyword}
               onChange={(e) => setNewKeyword(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleAdd()}
-              className="max-w-sm"
+              className="sm:max-w-sm"
             />
             <Button onClick={handleAdd} disabled={adding || !newKeyword.trim()}>
-              <Plus className="h-4 w-4 mr-2" />
-              추가
+              <Plus className="h-4 w-4 sm:mr-2" />
+              <span className="hidden sm:inline">추가</span>
             </Button>
           </div>
         </CardContent>
@@ -227,34 +233,36 @@ export default function KeywordsPage() {
                   key={kw.id}
                   className="flex items-center justify-between p-4 rounded-lg border bg-card hover:bg-muted/20 transition-colors"
                 >
-                  <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-3 sm:gap-4 min-w-0">
                     <Switch
                       checked={kw.active}
                       onCheckedChange={(checked) => handleToggle(kw.id, checked)}
                     />
-                    <div className="flex items-center gap-3">
-                      <div className={`h-8 w-8 rounded-lg flex items-center justify-center ${kw.active ? "bg-primary/10" : "bg-muted"}`}>
+                    <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+                      <div className={`h-8 w-8 rounded-lg flex items-center justify-center shrink-0 ${kw.active ? "bg-primary/10" : "bg-muted"}`}>
                         <Tag className={`h-4 w-4 ${kw.active ? "text-primary" : "text-muted-foreground"}`} />
                       </div>
-                      <div>
-                        <p className={`font-medium text-sm ${!kw.active && "text-muted-foreground"}`}>{kw.name}</p>
+                      <div className="min-w-0">
+                        <p className={`font-medium text-sm truncate ${!kw.active && "text-muted-foreground"}`}>{kw.name}</p>
                         <p className="text-xs text-muted-foreground">
                           누적 {kw._count.results.toLocaleString()}건 수집
                         </p>
                       </div>
                     </div>
-                    {!kw.active && (
-                      <Badge variant="outline" className="text-xs text-muted-foreground">비활성</Badge>
-                    )}
-                    {kw.active && (
-                      <Badge className="text-xs bg-emerald-100 text-emerald-700 border-emerald-200 hover:bg-emerald-100">활성</Badge>
-                    )}
+                    <div className="hidden sm:block">
+                      {!kw.active && (
+                        <Badge variant="outline" className="text-xs text-muted-foreground">비활성</Badge>
+                      )}
+                      {kw.active && (
+                        <Badge className="text-xs bg-emerald-100 text-emerald-700 border-emerald-200 hover:bg-emerald-100">활성</Badge>
+                      )}
+                    </div>
                   </div>
                   <Button
                     variant="ghost"
                     size="icon"
-                    onClick={() => handleDelete(kw.id, kw.name)}
-                    className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                    onClick={() => setDeleteTarget({ id: kw.id, name: kw.name })}
+                    className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10 shrink-0"
                   >
                     <Trash2 className="h-4 w-4" />
                   </Button>
@@ -264,6 +272,15 @@ export default function KeywordsPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* 삭제 확인 다이얼로그 */}
+      <DeleteConfirmDialog
+        open={!!deleteTarget}
+        onOpenChange={(open) => !open && setDeleteTarget(null)}
+        title={`'${deleteTarget?.name}' 키워드 삭제`}
+        description="이 키워드를 삭제하시겠습니까? 관련 크롤링 데이터도 함께 삭제됩니다. 이 작업은 되돌릴 수 없습니다."
+        onConfirm={handleDeleteConfirm}
+      />
     </div>
   );
 }

@@ -2,26 +2,41 @@ import nodemailer from "nodemailer";
 import { prisma } from "./db";
 import type { CrawlResult } from "@prisma/client";
 
-function formatResultsHtml(results: CrawlResult[]): string {
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+function typeLabel(type: string): string {
+  return type === "bid" ? "입찰공고" : type === "prespec" ? "사전규격" : "발주계획";
+}
+
+function formatResultsHtml(results: CrawlResult[], recipientName?: string): string {
   const rows = results
     .map(
       (r) => `
       <tr>
-        <td style="padding:8px;border:1px solid #ddd;">${r.type === "bid" ? "입찰공고" : r.type === "prespec" ? "사전규격" : "발주계획"}</td>
-        <td style="padding:8px;border:1px solid #ddd;">${r.agency}</td>
-        <td style="padding:8px;border:1px solid #ddd;">${r.title}</td>
-        <td style="padding:8px;border:1px solid #ddd;">${r.budget || "-"}</td>
-        <td style="padding:8px;border:1px solid #ddd;">${r.postDate}</td>
-        <td style="padding:8px;border:1px solid #ddd;">${r.deadline || "-"}</td>
+        <td style="padding:8px;border:1px solid #ddd;">${typeLabel(r.type)}</td>
+        <td style="padding:8px;border:1px solid #ddd;">${escapeHtml(r.agency)}</td>
+        <td style="padding:8px;border:1px solid #ddd;">${escapeHtml(r.title)}</td>
+        <td style="padding:8px;border:1px solid #ddd;">${escapeHtml(r.budget || "-")}</td>
+        <td style="padding:8px;border:1px solid #ddd;">${escapeHtml(r.postDate)}</td>
+        <td style="padding:8px;border:1px solid #ddd;">${escapeHtml(r.deadline || "-")}</td>
       </tr>`
     )
     .join("");
+
+  const greeting = recipientName ? `<p>${escapeHtml(recipientName)}님, ` : `<p>`;
 
   return `
     <html>
     <body style="font-family:sans-serif;">
       <h2>🔔 나라장터 신규 공고 알림</h2>
-      <p>${results.length}건의 신규 공고가 발견되었습니다.</p>
+      ${greeting}${results.length}건의 신규 공고가 발견되었습니다.</p>
       <table style="border-collapse:collapse;width:100%;">
         <thead>
           <tr style="background:#f5f5f5;">
@@ -116,11 +131,11 @@ export async function sendSlackNotification(results: CrawlResult[]): Promise<boo
         fields: [
           {
             type: "mrkdwn",
-            text: `*유형:* ${r.type === "bid" ? "입찰공고" : r.type === "prespec" ? "사전규격" : "발주계획"}`,
+            text: `*유형:* ${typeLabel(r.type)}`,
           },
-          { type: "mrkdwn", text: `*기관:* ${r.agency}` },
-          { type: "mrkdwn", text: `*사업명:* ${r.title}` },
-          { type: "mrkdwn", text: `*예산:* ${r.budget || "-"}` },
+          { type: "mrkdwn", text: `*기관:* ${escapeHtml(r.agency)}` },
+          { type: "mrkdwn", text: `*사업명:* ${escapeHtml(r.title)}` },
+          { type: "mrkdwn", text: `*예산:* ${escapeHtml(r.budget || "-")}` },
         ],
       })),
     ];
@@ -158,4 +173,160 @@ export async function sendSlackNotification(results: CrawlResult[]): Promise<boo
     });
     return false;
   }
+}
+
+// ── 구독자별 알림 ──
+
+function getTransporter() {
+  return nodemailer.createTransport({
+    host: process.env.EMAIL_HOST || "smtp.gmail.com",
+    port: parseInt(process.env.EMAIL_PORT || "587"),
+    secure: false,
+    auth: {
+      user: process.env.EMAIL_USER,
+      pass: process.env.EMAIL_PASS,
+    },
+  });
+}
+
+export async function sendSubscriberNotifications(
+  results: CrawlResult[]
+): Promise<{ sent: number; errors: string[] }> {
+  const errors: string[] = [];
+  let sent = 0;
+
+  if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
+    return { sent: 0, errors: ["이메일 SMTP 환경변수가 설정되지 않았습니다."] };
+  }
+
+  const subscribers = await prisma.subscriber.findMany({
+    where: { active: true, schedule: "immediate" },
+  });
+
+  if (subscribers.length === 0) return { sent: 0, errors: [] };
+
+  const transporter = getTransporter();
+
+  for (const sub of subscribers) {
+    try {
+      const subKeywords = sub.keywords
+        .split(",")
+        .map((k) => k.trim())
+        .filter(Boolean);
+
+      if (subKeywords.length === 0) continue;
+
+      const matched = results.filter((r) =>
+        subKeywords.some(
+          (kw) => r.title.includes(kw) || r.agency.includes(kw)
+        )
+      );
+
+      if (matched.length === 0) continue;
+
+      const matchedKeywords = subKeywords.filter((kw) =>
+        matched.some((r) => r.title.includes(kw) || r.agency.includes(kw))
+      );
+
+      await transporter.sendMail({
+        from: process.env.EMAIL_USER,
+        to: sub.email,
+        subject: `[나라장터] ${sub.name}님, 관심 키워드 매칭 공고 ${matched.length}건`,
+        html: formatResultsHtml(matched, sub.name),
+      });
+
+      await prisma.notifyLog.create({
+        data: {
+          type: "subscriber-email",
+          message: `${sub.name}(${sub.email}): ${matchedKeywords.join(",")} → ${matched.length}건`,
+          success: true,
+        },
+      });
+      sent++;
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      errors.push(`${sub.name}: ${msg}`);
+      await prisma.notifyLog.create({
+        data: {
+          type: "subscriber-email",
+          message: `${sub.name}(${sub.email}) 발송 실패: ${msg}`,
+          success: false,
+        },
+      });
+    }
+  }
+
+  return { sent, errors };
+}
+
+export async function sendDigestNotifications(
+  scheduleType: "daily" | "weekly"
+): Promise<{ sent: number; errors: string[] }> {
+  const errors: string[] = [];
+  let sent = 0;
+
+  if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
+    return { sent: 0, errors: ["이메일 SMTP 환경변수가 설정되지 않았습니다."] };
+  }
+
+  const subscribers = await prisma.subscriber.findMany({
+    where: { active: true, schedule: scheduleType },
+  });
+
+  if (subscribers.length === 0) return { sent: 0, errors: [] };
+
+  const daysBack = scheduleType === "daily" ? 1 : 7;
+  const since = new Date();
+  since.setDate(since.getDate() - daysBack);
+
+  const recentResults = await prisma.crawlResult.findMany({
+    where: { createdAt: { gte: since } },
+    orderBy: { createdAt: "desc" },
+    take: 500,
+  });
+
+  if (recentResults.length === 0) return { sent: 0, errors: [] };
+
+  const transporter = getTransporter();
+  const periodLabel = scheduleType === "daily" ? "일일" : "주간";
+
+  for (const sub of subscribers) {
+    try {
+      const subKeywords = sub.keywords
+        .split(",")
+        .map((k) => k.trim())
+        .filter(Boolean);
+
+      if (subKeywords.length === 0) continue;
+
+      const matched = recentResults.filter((r) =>
+        subKeywords.some(
+          (kw) => r.title.includes(kw) || r.agency.includes(kw)
+        )
+      );
+
+      if (matched.length === 0) continue;
+
+      await transporter.sendMail({
+        from: process.env.EMAIL_USER,
+        to: sub.email,
+        subject: `[나라장터] ${sub.name}님, ${periodLabel} 요약 - 매칭 공고 ${matched.length}건`,
+        html: formatResultsHtml(matched, sub.name),
+      });
+
+      await prisma.notifyLog.create({
+        data: {
+          type: `subscriber-${scheduleType}`,
+          message: `${sub.name}(${sub.email}): ${periodLabel} 요약 ${matched.length}건`,
+          success: true,
+        },
+      });
+      sent++;
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      errors.push(`${sub.name}: ${msg}`);
+    }
+  }
+
+  return { sent, errors };
 }

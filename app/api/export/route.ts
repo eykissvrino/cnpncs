@@ -1,15 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 import { searchAll } from "@/lib/narajan-api";
 import { generateExcel } from "@/lib/excel";
+import { exportParamsSchema } from "@/lib/validators";
 import type { UnifiedResult } from "@/types/narajan";
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
-  const keyword = searchParams.get("keyword")?.trim();
-
-  if (!keyword) {
-    return NextResponse.json({ error: "keyword 파라미터가 필요합니다." }, { status: 400 });
+  const parsed = exportParamsSchema.safeParse({ keyword: searchParams.get("keyword") });
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: parsed.error.issues[0]?.message || "키워드가 필요합니다." },
+      { status: 400 }
+    );
   }
+
+  const keyword = parsed.data.keyword.trim();
 
   try {
     const results = await searchAll(keyword);

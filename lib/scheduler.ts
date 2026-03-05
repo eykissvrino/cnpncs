@@ -1,9 +1,11 @@
 import cron, { type ScheduledTask } from "node-cron";
 import { prisma } from "./db";
 import { crawlAllBids, crawlAllOrderPlans, crawlAllPreSpecs } from "./narajan-api";
-import { sendEmailNotification, sendSlackNotification } from "./notify";
+import { sendEmailNotification, sendSubscriberNotifications, sendDigestNotifications } from "./notify";
 
 let schedulerTask: ScheduledTask | null = null;
+let dailyDigestTask: ScheduledTask | null = null;
+let weeklyDigestTask: ScheduledTask | null = null;
 
 // 전체 크롤링: 최근 N일치 데이터를 모두 가져와 DB에 저장
 export async function runFullCrawl(daysBack = 7): Promise<{ saved: number; errors: string[] }> {
@@ -73,10 +75,13 @@ export async function runKeywordNotify(): Promise<{ newCount: number; errors: st
   const keywords = await prisma.keyword.findMany({ where: { active: true } });
   const settings = await prisma.settings.findUnique({ where: { id: 1 } });
 
+  // 전체 미알림 신규 항목 수집 (구독자 알림용)
+  const allNewResults: typeof matched = [];
+
   for (const kw of keywords) {
     try {
       // DB에서 키워드 매칭 (미알림 항목)
-      const matched = await prisma.crawlResult.findMany({
+      var matched = await prisma.crawlResult.findMany({
         where: {
           notified: false,
           OR: [
@@ -89,21 +94,35 @@ export async function runKeywordNotify(): Promise<{ newCount: number; errors: st
 
       if (matched.length === 0) continue;
 
-      // 키워드와 연결 & 알림 발송
+      // 키워드와 연결 & 알림 플래그 설정
       for (const item of matched) {
         try {
           await prisma.crawlResult.update({
             where: { id: item.id },
-            data: { keywordId: kw.id, notified: settings?.emailEnabled || settings?.slackEnabled || false },
+            data: { keywordId: kw.id, notified: true },
           });
           newCount++;
+          allNewResults.push(item);
         } catch { /* 무시 */ }
       }
 
+      // 레거시 이메일 알림 (EMAIL_TO 설정 시)
       if (settings?.emailEnabled) await sendEmailNotification(matched);
-      if (settings?.slackEnabled) await sendSlackNotification(matched);
     } catch (e) {
       errors.push(`[${kw.name}] ${String(e)}`);
+    }
+  }
+
+  // 구독자별 즉시 알림 발송
+  if (allNewResults.length > 0) {
+    try {
+      const subResult = await sendSubscriberNotifications(allNewResults);
+      if (subResult.errors.length > 0) {
+        errors.push(...subResult.errors);
+      }
+      console.log(`[notify] 구독자 즉시 알림: ${subResult.sent}명 발송`);
+    } catch (e) {
+      errors.push(`구독자 알림 오류: ${String(e)}`);
     }
   }
 
@@ -133,6 +152,7 @@ export function startScheduler(): void {
     return;
   }
 
+  // 메인 크롤링 스케줄
   schedulerTask = cron.schedule(schedule, async () => {
     console.log(`[scheduler] 크롤링 시작: ${new Date().toISOString()}`);
     const result = await runCrawl(7); // 스케줄 실행은 7일 (최신 업데이트만)
@@ -144,13 +164,37 @@ export function startScheduler(): void {
     }
   });
 
-  console.log(`[scheduler] 스케줄러 등록됨: ${schedule}`);
+  // 매일 오전 9시 daily digest
+  if (dailyDigestTask) dailyDigestTask.stop();
+  dailyDigestTask = cron.schedule("0 9 * * *", async () => {
+    console.log(`[scheduler] daily digest 시작: ${new Date().toISOString()}`);
+    const result = await sendDigestNotifications("daily");
+    console.log(`[scheduler] daily digest: ${result.sent}명 발송`);
+  });
+
+  // 매주 월요일 오전 9시 weekly digest
+  if (weeklyDigestTask) weeklyDigestTask.stop();
+  weeklyDigestTask = cron.schedule("0 9 * * 1", async () => {
+    console.log(`[scheduler] weekly digest 시작: ${new Date().toISOString()}`);
+    const result = await sendDigestNotifications("weekly");
+    console.log(`[scheduler] weekly digest: ${result.sent}명 발송`);
+  });
+
+  console.log(`[scheduler] 스케줄러 등록됨: ${schedule} (+ daily 09:00, weekly Mon 09:00)`);
 }
 
 export function stopScheduler(): void {
   if (schedulerTask) {
     schedulerTask.stop();
     schedulerTask = null;
-    console.log("[scheduler] 스케줄러 중지됨");
   }
+  if (dailyDigestTask) {
+    dailyDigestTask.stop();
+    dailyDigestTask = null;
+  }
+  if (weeklyDigestTask) {
+    weeklyDigestTask.stop();
+    weeklyDigestTask = null;
+  }
+  console.log("[scheduler] 스케줄러 중지됨");
 }

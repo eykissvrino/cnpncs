@@ -1,9 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { searchBidAnnouncements, searchPreSpecs, searchOrderPlans } from "@/lib/narajan-api";
 import { prisma } from "@/lib/db";
+import { rateLimit } from "@/lib/rate-limit";
 import type { UnifiedResult } from "@/types/narajan";
 
 export async function GET(request: NextRequest) {
+  const ip = request.headers.get("x-forwarded-for") || "unknown";
+  const { allowed } = rateLimit(`search:${ip}`, 10, 60_000);
+  if (!allowed) {
+    return NextResponse.json({ error: "요청이 너무 빈번합니다. 잠시 후 다시 시도해주세요." }, { status: 429 });
+  }
+
   const { searchParams } = new URL(request.url);
   const keyword = searchParams.get("keyword")?.trim();
   const page = parseInt(searchParams.get("page") || "1");
@@ -13,7 +20,6 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    // ① DB에서 먼저 검색 (title LIKE '%keyword%')
     const dbResults = await prisma.crawlResult.findMany({
       where: {
         OR: [
@@ -42,11 +48,9 @@ export async function GET(request: NextRequest) {
     const dbPrespec = dbMapped.filter((r) => r.type === "prespec");
     const dbOrder = dbMapped.filter((r) => r.type === "order");
 
-    // ② DB에 데이터가 충분하면 DB 결과만 반환, 아니면 실시간 API도 호출
     const dbTotal = dbMapped.length;
 
     if (dbTotal >= 10) {
-      // DB에 충분한 데이터 → 바로 반환
       return NextResponse.json({
         bid: dbBid,
         prespec: dbPrespec,
@@ -56,7 +60,6 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // ③ DB에 데이터 부족 → 실시간 API 호출 (100건 제한 있음)
     const [bidResult, prespecResult, orderResult] = await Promise.allSettled([
       searchBidAnnouncements(keyword, page),
       searchPreSpecs(keyword, page),
@@ -67,7 +70,6 @@ export async function GET(request: NextRequest) {
     const apiPrespec = prespecResult.status === "fulfilled" ? prespecResult.value : [];
     const apiOrder = orderResult.status === "fulfilled" ? orderResult.value : [];
 
-    // ④ DB 결과 + API 결과 합치기 (id 기준 중복 제거)
     const existingIds = new Set(dbMapped.map((r) => r.id));
     const newFromApi = [...apiBid, ...apiPrespec, ...apiOrder].filter(
       (r) => !existingIds.has(r.id)
@@ -77,7 +79,6 @@ export async function GET(request: NextRequest) {
     const prespec = [...dbPrespec, ...apiPrespec.filter((r) => !existingIds.has(r.id))];
     const order = [...dbOrder, ...apiOrder.filter((r) => !existingIds.has(r.id))];
 
-    // ⑤ 새 API 결과를 DB에 저장 (다음 검색 때 활용)
     for (const item of newFromApi) {
       try {
         await prisma.crawlResult.upsert({
@@ -95,7 +96,6 @@ export async function GET(request: NextRequest) {
             rawData: item.rawData,
             isNew: true,
             notified: false,
-            // keywordId 없음 (전체 저장)
           },
         });
       } catch {
