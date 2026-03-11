@@ -5,6 +5,7 @@ import "./globals.css";
 import { Toaster } from "@/components/ui/sonner";
 
 const GTM_ID = "GTM-5NZP8GJ9";
+const GA_ID = "G-ZEF97V3SRF";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -29,6 +30,22 @@ export default function RootLayout({
   return (
     <html lang="ko">
       <head>
+        {/* Google Analytics (GA4) */}
+        <Script
+          src={`https://www.googletagmanager.com/gtag/js?id=${GA_ID}`}
+          strategy="afterInteractive"
+        />
+        <Script
+          id="ga4-config"
+          strategy="afterInteractive"
+          dangerouslySetInnerHTML={{
+            __html: `window.dataLayer = window.dataLayer || [];
+function gtag(){dataLayer.push(arguments);}
+gtag('js', new Date());
+gtag('config', '${GA_ID}');`,
+          }}
+        />
+        {/* Google Tag Manager */}
         <Script
           id="gtm-script"
           strategy="afterInteractive"
