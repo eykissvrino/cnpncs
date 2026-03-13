@@ -1,22 +1,27 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createHash } from "crypto";
 
 const AUTH_SECRET = process.env.AUTH_SECRET || "narajan-monitor-default-secret";
 
-function validateToken(token: string): boolean {
+async function sha256Hex(input: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(input);
+  const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+async function validateToken(token: string): Promise<boolean> {
   const parts = token.split(":");
   if (parts.length < 3) return false;
   const userId = parseInt(parts[0], 10);
   const username = parts[1];
   const hash = parts.slice(2).join(":");
   if (isNaN(userId) || !username) return false;
-  const expectedHash = createHash("sha256")
-    .update(`${userId}:${username}:${AUTH_SECRET}`)
-    .digest("hex");
+  const expectedHash = await sha256Hex(`${userId}:${username}:${AUTH_SECRET}`);
   return hash === expectedHash;
 }
 
-export function middleware(request: NextRequest) {
+export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // 인증 불필요 경로
@@ -40,9 +45,8 @@ export function middleware(request: NextRequest) {
 
   // 세션 쿠키 확인
   const sessionToken = request.cookies.get("narajan-session")?.value;
-  if (!sessionToken || !validateToken(sessionToken)) {
+  if (!sessionToken || !(await validateToken(sessionToken))) {
     if (sessionToken) {
-      // 잘못된 토큰이면 삭제
       const response = pathname.startsWith("/api/")
         ? NextResponse.json({ error: "세션이 만료되었습니다." }, { status: 401 })
         : NextResponse.redirect(new URL("/login", request.url));
