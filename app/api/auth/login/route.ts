@@ -1,21 +1,27 @@
 import { NextRequest, NextResponse } from "next/server";
-import { generateSessionToken } from "@/lib/auth";
+import { authenticateUser, createSessionCookie } from "@/lib/auth";
 
 export async function POST(request: NextRequest) {
   try {
-    const { password } = (await request.json()) as { password: string };
+    const { username, password } = (await request.json()) as {
+      username: string;
+      password: string;
+    };
 
-    const adminPassword = process.env.ADMIN_PASSWORD;
-    if (!adminPassword) {
-      return NextResponse.json({ error: "서버에 ADMIN_PASSWORD가 설정되지 않았습니다." }, { status: 500 });
+    if (!username || !password) {
+      return NextResponse.json({ error: "아이디와 비밀번호를 입력하세요." }, { status: 400 });
     }
 
-    if (password !== adminPassword) {
-      return NextResponse.json({ error: "비밀번호가 올바르지 않습니다." }, { status: 401 });
+    const user = await authenticateUser(username, password);
+    if (!user) {
+      return NextResponse.json({ error: "아이디 또는 비밀번호가 올바르지 않습니다." }, { status: 401 });
     }
 
-    const token = generateSessionToken(password);
-    const response = NextResponse.json({ success: true });
+    const token = createSessionCookie(user.id, user.username);
+    const response = NextResponse.json({
+      success: true,
+      user: { id: user.id, name: user.name, department: user.department, role: user.role },
+    });
 
     response.cookies.set("narajan-session", token, {
       httpOnly: true,

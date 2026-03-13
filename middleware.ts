@@ -1,4 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createHash } from "crypto";
+
+const AUTH_SECRET = process.env.AUTH_SECRET || "narajan-monitor-default-secret";
+
+function validateToken(token: string): boolean {
+  const parts = token.split(":");
+  if (parts.length < 3) return false;
+  const userId = parseInt(parts[0], 10);
+  const username = parts[1];
+  const hash = parts.slice(2).join(":");
+  if (isNaN(userId) || !username) return false;
+  const expectedHash = createHash("sha256")
+    .update(`${userId}:${username}:${AUTH_SECRET}`)
+    .digest("hex");
+  return hash === expectedHash;
+}
 
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -22,40 +38,29 @@ export function middleware(request: NextRequest) {
     }
   }
 
-  // ADMIN_PASSWORD 미설정 시 인증 건너뜀 (개발 편의)
-  if (!process.env.ADMIN_PASSWORD) {
-    return NextResponse.next();
-  }
-
   // 세션 쿠키 확인
   const sessionToken = request.cookies.get("narajan-session")?.value;
-  if (!sessionToken) {
-    // API 요청은 401 반환
+  if (!sessionToken || !validateToken(sessionToken)) {
+    if (sessionToken) {
+      // 잘못된 토큰이면 삭제
+      const response = pathname.startsWith("/api/")
+        ? NextResponse.json({ error: "세션이 만료되었습니다." }, { status: 401 })
+        : NextResponse.redirect(new URL("/login", request.url));
+      response.cookies.delete("narajan-session");
+      return response;
+    }
     if (pathname.startsWith("/api/")) {
       return NextResponse.json({ error: "인증이 필요합니다." }, { status: 401 });
     }
-    // 페이지 요청은 로그인으로 리다이렉트
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
-  // 토큰 검증 (middleware에서는 crypto 사용 불가하므로 간단 비교)
-  // lib/auth.ts의 generateSessionToken과 동일한 로직
-  const { createHash } = require("crypto") as typeof import("crypto");
-  const authSecret = process.env.AUTH_SECRET || "narajan-monitor-default-secret";
-  const expectedToken = createHash("sha256")
-    .update(process.env.ADMIN_PASSWORD + authSecret)
-    .digest("hex");
-
-  if (sessionToken !== expectedToken) {
-    if (pathname.startsWith("/api/")) {
-      return NextResponse.json({ error: "세션이 만료되었습니다." }, { status: 401 });
-    }
-    const response = NextResponse.redirect(new URL("/login", request.url));
-    response.cookies.delete("narajan-session");
-    return response;
-  }
-
-  return NextResponse.next();
+  // userId를 헤더에 추가하여 API에서 사용
+  const parts = sessionToken.split(":");
+  const response = NextResponse.next();
+  response.headers.set("x-user-id", parts[0]);
+  response.headers.set("x-username", parts[1]);
+  return response;
 }
 
 export const config = {

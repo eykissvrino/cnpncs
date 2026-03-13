@@ -3,9 +3,18 @@ import { prisma } from "@/lib/db";
 import { keywordCreateSchema, keywordPatchSchema } from "@/lib/validators";
 import { z } from "zod";
 
-export async function GET() {
+function getUserId(request: NextRequest): number | null {
+  const id = request.headers.get("x-user-id");
+  if (!id) return null;
+  const parsed = parseInt(id, 10);
+  return isNaN(parsed) ? null : parsed;
+}
+
+export async function GET(request: NextRequest) {
   try {
+    const userId = getUserId(request);
     const keywords = await prisma.keyword.findMany({
+      where: userId ? { userId } : {},
       orderBy: { createdAt: "desc" },
       include: {
         _count: { select: { results: true } },
@@ -19,6 +28,7 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
+    const userId = getUserId(request);
     const body = await request.json();
     const parsed = keywordCreateSchema.safeParse(body);
     if (!parsed.success) {
@@ -29,7 +39,7 @@ export async function POST(request: NextRequest) {
     }
 
     const keyword = await prisma.keyword.create({
-      data: { name: parsed.data.name },
+      data: { name: parsed.data.name, userId },
     });
     return NextResponse.json(keyword, { status: 201 });
   } catch (error) {

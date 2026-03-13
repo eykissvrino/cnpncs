@@ -7,12 +7,28 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+model User {
+  id        Int       @id @default(autoincrement())
+  username  String    @unique
+  password  String
+  name      String
+  department String
+  role      String    @default("user")
+  active    Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  keywords  Keyword[]
+}
+
 model Keyword {
   id        Int           @id @default(autoincrement())
-  name      String        @unique
+  name      String
   active    Boolean       @default(true)
   createdAt DateTime      @default(now())
+  userId    Int?
+  user      User?         @relation(fields: [userId], references: [id])
   results   CrawlResult[]
+
+  @@unique([name, userId])
 }
 
 model CrawlResult {

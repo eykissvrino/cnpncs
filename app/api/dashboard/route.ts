@@ -1,11 +1,14 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
-    // 저장된 활성 키워드 조회
+    const userIdHeader = request.headers.get("x-user-id");
+    const userId = userIdHeader ? parseInt(userIdHeader, 10) : null;
+
+    // 저장된 활성 키워드 조회 (사용자별)
     const keywords = await prisma.keyword.findMany({
-      where: { active: true },
+      where: { active: true, ...(userId ? { userId } : {}) },
       orderBy: { createdAt: "asc" },
     });
 

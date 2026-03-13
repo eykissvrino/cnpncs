@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Building2, LogIn, Loader2 } from "lucide-react";
 
 export default function LoginPage() {
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -15,7 +16,7 @@ export default function LoginPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!password.trim()) return;
+    if (!username.trim() || !password.trim()) return;
 
     setLoading(true);
     setError("");
@@ -23,7 +24,7 @@ export default function LoginPage() {
       const res = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password }),
+        body: JSON.stringify({ username, password }),
       });
       const data = (await res.json()) as { success?: boolean; error?: string };
       if (!res.ok) {
@@ -50,17 +51,23 @@ export default function LoginPage() {
           </div>
           <CardTitle className="text-xl">나라장터 모니터</CardTitle>
           <p className="text-sm text-muted-foreground mt-1">
-            시스템에 접속하려면 비밀번호를 입력하세요
+            시앤피컨설팅 나라장터 통합 모니터링
           </p>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
             <Input
+              type="text"
+              placeholder="아이디"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              autoFocus
+            />
+            <Input
               type="password"
               placeholder="비밀번호"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              autoFocus
             />
             {error && (
               <p className="text-sm text-destructive text-center">{error}</p>
