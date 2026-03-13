@@ -11,16 +11,19 @@ function hashPassword(password: string): string {
   return createHash("sha256").update(password).digest("hex");
 }
 
+const COMMON_PASSWORD = "cnp1234";
+
 const users = [
-  { username: "cnp_admin",   password: "cnp2025!",    name: "관리자",     department: "경영지원",     role: "admin" },
-  { username: "cnp_infra",   password: "infra2025!",  name: "인프라본부", department: "인프라본부",   role: "user" },
-  { username: "cnp_arch",    password: "arch2025!",   name: "건축본부",   department: "건축본부",     role: "user" },
-  { username: "cnp_civil",   password: "civil2025!",  name: "토목본부",   department: "토목본부",     role: "user" },
-  { username: "cnp_env",     password: "env2025!",    name: "환경본부",   department: "환경본부",     role: "user" },
-  { username: "cnp_safety",  password: "safety2025!", name: "안전본부",   department: "안전본부",     role: "user" },
-  { username: "cnp_digital", password: "digital2025!",name: "디지털본부", department: "디지털본부",   role: "user" },
-  { username: "cnp_energy",  password: "energy2025!", name: "에너지본부", department: "에너지본부",   role: "user" },
-  { username: "cnp_mgmt",    password: "mgmt2025!",   name: "경영지원본부", department: "경영지원본부", role: "user" },
+  { username: "cnp_ceo",      password: COMMON_PASSWORD, name: "대표님",             department: "대표",               role: "admin" },
+  { username: "cnp_global",   password: COMMON_PASSWORD, name: "글로벌컨설팅본부",   department: "글로벌컨설팅본부",   role: "user" },
+  { username: "cnp_next",     password: COMMON_PASSWORD, name: "넥스트보상연구본부", department: "넥스트보상연구본부", role: "user" },
+  { username: "cnp_biz",      password: COMMON_PASSWORD, name: "경영컨설팅본부",     department: "경영컨설팅본부",     role: "user" },
+  { username: "cnp_work",     password: COMMON_PASSWORD, name: "일터혁신컨설팅본부", department: "일터혁신컨설팅본부", role: "user" },
+  { username: "cnp_ability",  password: COMMON_PASSWORD, name: "직업능력개발본부",   department: "직업능력개발본부",   role: "user" },
+  { username: "cnp_vocacons", password: COMMON_PASSWORD, name: "직업능력컨설팅본부", department: "직업능력컨설팅본부", role: "user" },
+  { username: "cnp_public",   password: COMMON_PASSWORD, name: "공공경영컨설팅본부", department: "공공경영컨설팅본부", role: "user" },
+  { username: "cnp_sustain",  password: COMMON_PASSWORD, name: "지속가능경영본부",   department: "지속가능경영본부",   role: "user" },
+  { username: "cnp_ai",       password: COMMON_PASSWORD, name: "AI컨설팅연구소",     department: "AI컨설팅연구소",     role: "user" },
 ];
 
 async function main() {
