@@ -1,6 +1,6 @@
 [build]
 builder = "NIXPACKS"
-buildCommand = "npm install && npx prisma generate && npm run build"
+buildCommand = "npm install --legacy-peer-deps && npx prisma generate && npx next build"
 
 [deploy]
 startCommand = "mkdir -p /data && npx prisma db push && exec node_modules/.bin/next start"
