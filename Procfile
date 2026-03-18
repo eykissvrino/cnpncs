@@ -1,1 +1,1 @@
-web: mkdir -p /data && node --import tsx prisma/migrate.ts && node_modules/.bin/next start
+web: mkdir -p /data && node prisma/migrate.mjs && node_modules/.bin/next start
