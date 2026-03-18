@@ -12,7 +12,7 @@ function hashPassword(password: string): string {
 const COMMON_PASSWORD = "cnp1234";
 
 const users = [
-  { username: "cnp_ceo",      password: COMMON_PASSWORD, name: "대표님",             department: "대표",               role: "admin" },
+  { username: "admin",         password: COMMON_PASSWORD, name: "관리자",             department: "관리",               role: "admin" },
   { username: "cnp_global",   password: COMMON_PASSWORD, name: "글로벌컨설팅본부",   department: "글로벌컨설팅본부",   role: "user" },
   { username: "cnp_next",     password: COMMON_PASSWORD, name: "넥스트보상연구본부", department: "넥스트보상연구본부", role: "user" },
   { username: "cnp_biz",      password: COMMON_PASSWORD, name: "경영컨설팅본부",     department: "경영컨설팅본부",     role: "user" },
