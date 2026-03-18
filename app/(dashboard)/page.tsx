@@ -33,6 +33,7 @@ interface SearchResults {
   bid: UnifiedResult[];
   prespec: UnifiedResult[];
   order: UnifiedResult[];
+  bidresult: UnifiedResult[];
   total: number;
 }
 
@@ -366,8 +367,8 @@ export default function HomePage() {
 
               {/* 유형 필터 */}
               <div className="flex flex-wrap gap-2 mb-3">
-                {(["bid", "order", "prespec"] as const).map((type) => {
-                  const labels: Record<string, string> = { bid: "입찰공고", order: "발주계획", prespec: "사전규격" };
+                {(["bid", "order", "prespec", "bidresult"] as const).map((type) => {
+                  const labels: Record<string, string> = { bid: "입찰공고", order: "발주계획", prespec: "사전규격", bidresult: "개찰결과" };
                   const count = keywordFilteredItems.filter((i) => i.type === type).length;
                   const isOn = selectedTypes?.has(type) ?? false;
                   return (
@@ -468,9 +469,12 @@ export default function HomePage() {
                 <TabsTrigger value="prespec" className="data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-sm">
                   사전 <Badge variant="secondary" className="ml-2">{results.prespec.length}</Badge>
                 </TabsTrigger>
+                <TabsTrigger value="bidresult" className="data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-sm">
+                  개찰 <Badge variant="secondary" className="ml-2">{results.bidresult.length}</Badge>
+                </TabsTrigger>
               </TabsList>
               <TabsContent value="all" className="mt-4">
-                <ResultTable results={[...results.bid, ...results.order, ...results.prespec]} isLoading={loading} onRowClick={handleRowClick} />
+                <ResultTable results={[...results.bid, ...results.order, ...results.prespec, ...results.bidresult]} isLoading={loading} onRowClick={handleRowClick} />
               </TabsContent>
               <TabsContent value="bid" className="mt-4">
                 <ResultTable results={results.bid} isLoading={loading} onRowClick={handleRowClick} />
@@ -480,6 +484,9 @@ export default function HomePage() {
               </TabsContent>
               <TabsContent value="prespec" className="mt-4">
                 <ResultTable results={results.prespec} isLoading={loading} onRowClick={handleRowClick} />
+              </TabsContent>
+              <TabsContent value="bidresult" className="mt-4">
+                <ResultTable results={results.bidresult} isLoading={loading} onRowClick={handleRowClick} />
               </TabsContent>
             </Tabs>
           )}

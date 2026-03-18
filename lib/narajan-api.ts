@@ -4,6 +4,7 @@ import type {
   BidAnnouncementItem,
   PreSpecItem,
   OrderPlanItem,
+  BidResultItem,
   UnifiedResult,
 } from "@/types/narajan";
 
@@ -147,10 +148,7 @@ export async function searchBidAnnouncements(
 // 공식 문서(data.go.kr 15129437) 기준 엔드포인트
 // Base URL: https://apis.data.go.kr/1230000/ao/HrcspSsstndrdInfoService
 const PRESPEC_ENDPOINTS = [
-  "HrcspSsstndrdInfoService/getPublicPrcureThngInfoThng",     // 물품 사전규격 목록
   "HrcspSsstndrdInfoService/getPublicPrcureThngInfoServc",    // 용역 사전규격 목록
-  "HrcspSsstndrdInfoService/getPublicPrcureThngInfoCnstwk",   // 공사 사전규격 목록
-  "HrcspSsstndrdInfoService/getPublicPrcureThngInfoFrgcpt",   // 외자 사전규격 목록
 ];
 
 function mapPreSpecItem(item: PreSpecItem): UnifiedResult {
@@ -170,10 +168,7 @@ function mapPreSpecItem(item: PreSpecItem): UnifiedResult {
 
 // 검색용 PPSSrch 엔드포인트
 const PRESPEC_SEARCH_ENDPOINTS = [
-  "HrcspSsstndrdInfoService/getPublicPrcureThngInfoThngPPSSrch",     // 물품
   "HrcspSsstndrdInfoService/getPublicPrcureThngInfoServcPPSSrch",    // 용역
-  "HrcspSsstndrdInfoService/getPublicPrcureThngInfoCnstwkPPSSrch",   // 공사
-  "HrcspSsstndrdInfoService/getPublicPrcureThngInfoFrgcptPPSSrch",   // 외자
 ];
 
 export async function searchPreSpecs(
@@ -262,6 +257,159 @@ export async function searchOrderPlans(
   } catch {
     return [];
   }
+}
+
+// ────────────────────────────────────────────────
+// 낙찰결과
+// API: ScsbidInfoService/getOpengResultListInfoServc
+// 용역 개찰완료 목록 검색
+// ────────────────────────────────────────────────
+const BID_RESULT_BASE_URL = "https://apis.data.go.kr/1230000/as/ScsbidInfoService";
+
+export async function searchBidResults(
+  keyword: string,
+  page = 1
+): Promise<UnifiedResult[]> {
+  const apiKey = getApiKey();
+  const { inqryBgnDt, inqryEndDt } = getDateRange(30);
+
+  try {
+    const data = await fetchWithRetry<ApiResponse<BidResultItem>>(
+      `${BID_RESULT_BASE_URL}/getOpengResultListInfoServc`,
+      {
+        serviceKey: apiKey,
+        type: "json",
+        numOfRows: "100",
+        pageNo: String(page),
+        inqryDiv: "1",
+        inqryBgnDt,
+        inqryEndDt,
+      }
+    );
+
+    const body = data?.response?.body;
+    if (!body || body.totalCount === 0) return [];
+
+    const rawItems = parseItems<BidResultItem>(body.items);
+
+    // 키워드 클라이언트 필터
+    const filtered = keyword
+      ? rawItems.filter(
+          (item) =>
+            item.bidNtceNm?.includes(keyword) ||
+            item.prcbdrNm?.includes(keyword) ||
+            item.ntceInsttNm?.includes(keyword) ||
+            item.dminsttNm?.includes(keyword)
+        )
+      : rawItems;
+
+    const items: UnifiedResult[] = [];
+    for (const item of filtered) {
+      items.push({
+        id: `bidresult-${item.bidNtceNo}-${item.bidNtceOrd}-${item.prcbdrBizno}`,
+        type: "bidresult",
+        typeLabel: "개찰결과",
+        title: item.bidNtceNm || "-",
+        agency: item.ntceInsttNm || "-",
+        budget: formatBudget(item.sucsfbidAmt || item.bidprcAmt),
+        postDate: item.rgstDt?.substring(0, 10) || "-",
+        deadline: "-",
+        url: "",
+        rawData: JSON.stringify(item),
+      });
+    }
+    return items;
+  } catch (error) {
+    console.error("[낙찰결과 검색 실패]", (error as Error)?.message);
+    return [];
+  }
+}
+
+export async function crawlAllBidResults(daysBack = 7): Promise<UnifiedResult[]> {
+  const apiKey = getApiKey();
+  const endpoint = "getOpengResultListInfoServc";
+  const allItems: UnifiedResult[] = [];
+  const pad = (n: number) => String(n).padStart(2, "0");
+
+  const CHUNK_DAYS = 3;
+
+  for (let offset = 0; offset < daysBack; offset += CHUNK_DAYS) {
+    const chunkSize = Math.min(CHUNK_DAYS, daysBack - offset);
+
+    const endDate = new Date();
+    endDate.setDate(endDate.getDate() - offset);
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - (offset + chunkSize));
+
+    const inqryEndDt = `${endDate.getFullYear()}${pad(endDate.getMonth() + 1)}${pad(endDate.getDate())}2359`;
+    const inqryBgnDt = `${startDate.getFullYear()}${pad(startDate.getMonth() + 1)}${pad(startDate.getDate())}0000`;
+
+    try {
+      const first = await fetchWithRetry<ApiResponse<BidResultItem>>(
+        `${BID_RESULT_BASE_URL}/${endpoint}`,
+        {
+          serviceKey: apiKey,
+          type: "json",
+          numOfRows: "100",
+          pageNo: "1",
+          inqryDiv: "1",
+          inqryBgnDt,
+          inqryEndDt,
+        }
+      );
+      const totalCount = first?.response?.body?.totalCount ?? 0;
+      const totalPages = Math.min(Math.ceil(totalCount / 100), 50);
+
+      if (totalPages === 0) continue;
+
+      const pages = Array.from({ length: totalPages }, (_, i) => i + 1);
+
+      for (let i = 0; i < pages.length; i += 10) {
+        const batch = pages.slice(i, i + 10);
+        const results = await Promise.allSettled(
+          batch.map((p) =>
+            fetchWithRetry<ApiResponse<BidResultItem>>(
+              `${BID_RESULT_BASE_URL}/${endpoint}`,
+              {
+                serviceKey: apiKey,
+                type: "json",
+                numOfRows: "100",
+                pageNo: String(p),
+                inqryDiv: "1",
+                inqryBgnDt,
+                inqryEndDt,
+              }
+            )
+          )
+        );
+        for (const r of results) {
+          if (r.status === "rejected") continue;
+          const items = parseItems<BidResultItem>(r.value?.response?.body?.items);
+          for (const item of items) {
+            allItems.push({
+              id: `bidresult-${item.bidNtceNo}-${item.bidNtceOrd}-${item.prcbdrBizno}`,
+              type: "bidresult",
+              typeLabel: "개찰결과",
+              title: item.bidNtceNm || "-",
+              agency: item.ntceInsttNm || "-",
+              budget: formatBudget(item.sucsfbidAmt || item.bidprcAmt),
+              postDate: item.rgstDt?.substring(0, 10) || "-",
+              deadline: "-",
+              url: "",
+              rawData: JSON.stringify(item),
+            });
+          }
+        }
+        if (i + 10 < pages.length) await new Promise((r) => setTimeout(r, 200));
+      }
+    } catch {
+      // 청크 실패는 무시하고 다음 청크 진행
+    }
+
+    if (offset + CHUNK_DAYS < daysBack) await new Promise((r) => setTimeout(r, 300));
+  }
+
+  return allItems;
 }
 
 // ────────────────────────────────────────────────
@@ -459,22 +607,26 @@ export async function searchAll(keyword: string): Promise<{
   bid: UnifiedResult[];
   prespec: UnifiedResult[];
   order: UnifiedResult[];
+  bidresult: UnifiedResult[];
   total: number;
 }> {
-  const [bidResult, prespecResult, orderResult] = await Promise.allSettled([
+  const [bidResult, prespecResult, orderResult, bidResultResult] = await Promise.allSettled([
     searchBidAnnouncements(keyword),
     searchPreSpecs(keyword),
     searchOrderPlans(keyword),
+    searchBidResults(keyword),
   ]);
 
   const bid = bidResult.status === "fulfilled" ? bidResult.value : [];
   const prespec = prespecResult.status === "fulfilled" ? prespecResult.value : [];
   const order = orderResult.status === "fulfilled" ? orderResult.value : [];
+  const bidresult = bidResultResult.status === "fulfilled" ? bidResultResult.value : [];
 
   return {
     bid,
     prespec,
     order,
-    total: bid.length + prespec.length + order.length,
+    bidresult,
+    total: bid.length + prespec.length + order.length + bidresult.length,
   };
 }

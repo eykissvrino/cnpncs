@@ -15,8 +15,11 @@ model User {
   department String
   role      String    @default("user")
   active    Boolean   @default(true)
+  lastLoginAt DateTime?
+  loginCount Int       @default(0)
   createdAt DateTime  @default(now())
   keywords  Keyword[]
+  accessLogs AccessLog[]
 }
 
 model Keyword {
@@ -49,29 +52,45 @@ model CrawlResult {
   createdAt DateTime @default(now())
 }
 
-model NotifyLog {
+model AccessLog {
   id        Int      @id @default(autoincrement())
-  type      String
-  message   String
-  success   Boolean
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id])
+  action    String
+  detail    String?
+  ip        String?
   createdAt DateTime @default(now())
 }
 
-model Settings {
-  id           Int     @id @default(1)
-  emailEnabled Boolean @default(false)
-  slackEnabled Boolean @default(false)
-  cronSchedule String  @default("0 */2 * * *")
+model BidResult {
+  id            Int      @id @default(autoincrement())
+  bidNtceNo     String
+  bidNtceOrd    String?
+  bidNtceNm     String
+  opengDt       String?
+  sucsfbidMthdNm String?
+  companyName   String?
+  companyBizno  String?
+  bidAmount     String?
+  sucsfbidAmt   String?
+  ranking       Int?
+  resultType    String   @default("completed")
+  agency        String?
+  rawData       String
+  createdAt     DateTime @default(now())
+
+  @@unique([bidNtceNo, bidNtceOrd, companyBizno])
 }
 
-model Subscriber {
-  id         Int      @id @default(autoincrement())
-  name       String
-  department String
-  email      String   @unique
-  schedule   String   @default("immediate")
-  keywords   String   @default("")
-  active     Boolean  @default(true)
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+model Company {
+  id          Int      @id @default(autoincrement())
+  bizno       String   @unique
+  name        String
+  totalBids   Int      @default(0)
+  totalWins   Int      @default(0)
+  totalAmount String?
+  lastBidDate String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }
+

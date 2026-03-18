@@ -1,11 +1,6 @@
-import cron, { type ScheduledTask } from "node-cron";
 import { prisma } from "./db";
-import { crawlAllBids, crawlAllOrderPlans, crawlAllPreSpecs } from "./narajan-api";
-import { sendEmailNotification, sendSubscriberNotifications, sendDigestNotifications } from "./notify";
-
-let schedulerTask: ScheduledTask | null = null;
-let dailyDigestTask: ScheduledTask | null = null;
-let weeklyDigestTask: ScheduledTask | null = null;
+import { crawlAllBids, crawlAllOrderPlans, crawlAllPreSpecs, crawlAllBidResults } from "./narajan-api";
+import type { UnifiedResult } from "@/types/narajan";
 
 // 전체 크롤링: 최근 N일치 데이터를 모두 가져와 DB에 저장
 export async function runFullCrawl(daysBack = 7): Promise<{ saved: number; errors: string[] }> {
@@ -15,21 +10,24 @@ export async function runFullCrawl(daysBack = 7): Promise<{ saved: number; error
   console.log(`[crawler] 전체 크롤링 시작 (최근 ${daysBack}일)`);
 
   try {
-    const [bids, orders, preSpecs] = await Promise.allSettled([
+    const [bids, orders, preSpecs, bidResults] = await Promise.allSettled([
       crawlAllBids(daysBack),
       crawlAllOrderPlans(),
       crawlAllPreSpecs(),
+      crawlAllBidResults(daysBack),
     ]);
 
     const allItems = [
       ...(bids.status === "fulfilled" ? bids.value : []),
       ...(orders.status === "fulfilled" ? orders.value : []),
       ...(preSpecs.status === "fulfilled" ? preSpecs.value : []),
+      ...(bidResults.status === "fulfilled" ? bidResults.value : []),
     ];
 
     if (bids.status === "rejected") errors.push("입찰공고 크롤링 실패: " + String(bids.reason));
     if (orders.status === "rejected") errors.push("발주계획 크롤링 실패: " + String(orders.reason));
     if (preSpecs.status === "rejected") errors.push("사전규격 크롤링 실패: " + String(preSpecs.reason));
+    if (bidResults.status === "rejected") errors.push("낙찰결과 크롤링 실패: " + String(bidResults.reason));
 
     console.log(`[crawler] 수집 완료: ${allItems.length}건`);
 
@@ -59,6 +57,12 @@ export async function runFullCrawl(daysBack = 7): Promise<{ saved: number; error
         // 중복 등 무시
       }
     }
+
+    // BidResult 모델에 별도 저장 및 Company 업데이트
+    if (bidResults.status === "fulfilled") {
+      await saveBidResultsAndUpdateCompanies(bidResults.value);
+    }
+
     console.log(`[crawler] DB 저장: ${saved}건 신규`);
   } catch (e) {
     errors.push("크롤링 오류: " + String(e));
@@ -67,21 +71,85 @@ export async function runFullCrawl(daysBack = 7): Promise<{ saved: number; error
   return { saved, errors };
 }
 
-// 키워드 알림: DB에 저장된 새 항목 중 등록된 키워드와 매칭 → 알림 발송
+// BidResult 저장 및 Company 통계 업데이트
+async function saveBidResultsAndUpdateCompanies(items: UnifiedResult[]): Promise<void> {
+  for (const item of items) {
+    try {
+      const rawData = JSON.parse(item.rawData);
+      const bidNtceNo = rawData.bidNtceNo || "";
+      const bidNtceOrd = rawData.bidNtceOrd || "";
+      const companyBizno = rawData.prcbdrBizno || "";
+
+      if (!bidNtceNo || !companyBizno) continue;
+
+      // BidResult 저장
+      const bidResult = await prisma.bidResult.upsert({
+        where: {
+          bidNtceNo_bidNtceOrd_companyBizno: {
+            bidNtceNo,
+            bidNtceOrd,
+            companyBizno,
+          },
+        },
+        update: {},
+        create: {
+          bidNtceNo,
+          bidNtceOrd,
+          bidNtceNm: rawData.bidNtceNm || "",
+          opengDt: rawData.opengDt || null,
+          sucsfbidMthdNm: rawData.sucsfbidMthdNm || null,
+          companyName: rawData.prcbdrNm || null,
+          companyBizno,
+          bidAmount: rawData.bidprcAmt || null,
+          sucsfbidAmt: rawData.sucsfbidAmt || null,
+          ranking: rawData.rnkng ? parseInt(rawData.rnkng, 10) : null,
+          resultType: "completed",
+          agency: rawData.ntceInsttNm || null,
+          rawData: item.rawData,
+        },
+      });
+
+      // Company 통계 업데이트
+      if (companyBizno) {
+        const ranking = rawData.rnkng ? parseInt(rawData.rnkng, 10) : 999;
+        const isWin = ranking === 1;
+
+        await prisma.company.upsert({
+          where: { bizno: companyBizno },
+          update: {
+            totalBids: { increment: 1 },
+            totalWins: isWin ? { increment: 1 } : undefined,
+            totalAmount: rawData.sucsfbidAmt || undefined,
+            lastBidDate: rawData.rgstDt?.substring(0, 10) || undefined,
+            updatedAt: new Date(),
+          },
+          create: {
+            bizno: companyBizno,
+            name: rawData.prcbdrNm || "Unknown",
+            totalBids: 1,
+            totalWins: isWin ? 1 : 0,
+            totalAmount: rawData.sucsfbidAmt || null,
+            lastBidDate: rawData.rgstDt?.substring(0, 10) || null,
+          },
+        });
+      }
+    } catch (error) {
+      console.error("[BidResult 저장 실패]", (error as Error)?.message);
+    }
+  }
+}
+
+// 키워드 매칭: DB에 저장된 새 항목 중 등록된 키워드와 매칭하여 keywordId 설정
 export async function runKeywordNotify(): Promise<{ newCount: number; errors: string[] }> {
   const errors: string[] = [];
   let newCount = 0;
 
   const keywords = await prisma.keyword.findMany({ where: { active: true } });
-  const settings = await prisma.settings.findUnique({ where: { id: 1 } });
-
-  // 전체 미알림 신규 항목 수집 (구독자 알림용)
-  const allNewResults: typeof matched = [];
 
   for (const kw of keywords) {
     try {
       // DB에서 키워드 매칭 (미알림 항목)
-      var matched = await prisma.crawlResult.findMany({
+      const matched = await prisma.crawlResult.findMany({
         where: {
           notified: false,
           OR: [
@@ -102,27 +170,10 @@ export async function runKeywordNotify(): Promise<{ newCount: number; errors: st
             data: { keywordId: kw.id, notified: true },
           });
           newCount++;
-          allNewResults.push(item);
         } catch { /* 무시 */ }
       }
-
-      // 레거시 이메일 알림 (EMAIL_TO 설정 시)
-      if (settings?.emailEnabled) await sendEmailNotification(matched);
     } catch (e) {
       errors.push(`[${kw.name}] ${String(e)}`);
-    }
-  }
-
-  // 구독자별 즉시 알림 발송
-  if (allNewResults.length > 0) {
-    try {
-      const subResult = await sendSubscriberNotifications(allNewResults);
-      if (subResult.errors.length > 0) {
-        errors.push(...subResult.errors);
-      }
-      console.log(`[notify] 구독자 즉시 알림: ${subResult.sent}명 발송`);
-    } catch (e) {
-      errors.push(`구독자 알림 오류: ${String(e)}`);
     }
   }
 
@@ -130,8 +181,8 @@ export async function runKeywordNotify(): Promise<{ newCount: number; errors: st
 }
 
 // 통합 크롤링 실행 (전체 수집 + 키워드 알림)
-// 수동 실행 시 30일, 스케줄 실행 시 7일 권장
-export async function runCrawl(daysBack = 30): Promise<{ newCount: number; errors: string[] }> {
+// 수동 실행 시 90일, 스케줄 실행 시 7일 권장
+export async function runCrawl(daysBack = 90): Promise<{ newCount: number; errors: string[] }> {
   const crawlResult = await runFullCrawl(daysBack);
   const notifyResult = await runKeywordNotify();
   return {
@@ -141,61 +192,9 @@ export async function runCrawl(daysBack = 30): Promise<{ newCount: number; error
 }
 
 export function startScheduler(): void {
-  if (schedulerTask) {
-    schedulerTask.stop();
-  }
-
-  const schedule = process.env.CRON_SCHEDULE || "0 */2 * * *";
-
-  if (!cron.validate(schedule)) {
-    console.error(`[scheduler] 잘못된 cron 스케줄: ${schedule}`);
-    return;
-  }
-
-  // 메인 크롤링 스케줄
-  schedulerTask = cron.schedule(schedule, async () => {
-    console.log(`[scheduler] 크롤링 시작: ${new Date().toISOString()}`);
-    const result = await runCrawl(7); // 스케줄 실행은 7일 (최신 업데이트만)
-    console.log(
-      `[scheduler] 완료: 신규 ${result.newCount}건, 오류 ${result.errors.length}건`
-    );
-    if (result.errors.length > 0) {
-      console.error("[scheduler] 오류:", result.errors);
-    }
-  });
-
-  // 평일 오전 9시 weekday digest (월~금)
-  if (dailyDigestTask) dailyDigestTask.stop();
-  dailyDigestTask = cron.schedule("0 9 * * 1-5", async () => {
-    console.log(`[scheduler] weekday/daily digest 시작: ${new Date().toISOString()}`);
-    const weekdayResult = await sendDigestNotifications("weekday");
-    const dailyResult = await sendDigestNotifications("daily");
-    console.log(`[scheduler] weekday: ${weekdayResult.sent}명, daily: ${dailyResult.sent}명 발송`);
-  });
-
-  // 매주 월요일 오전 9시 weekly digest
-  if (weeklyDigestTask) weeklyDigestTask.stop();
-  weeklyDigestTask = cron.schedule("0 9 * * 1", async () => {
-    console.log(`[scheduler] weekly digest 시작: ${new Date().toISOString()}`);
-    const result = await sendDigestNotifications("weekly");
-    console.log(`[scheduler] weekly digest: ${result.sent}명 발송`);
-  });
-
-  console.log(`[scheduler] 스케줄러 등록됨: ${schedule} (+ weekday/daily 09:00 월~금, weekly Mon 09:00)`);
+  console.log("[scheduler] 스케줄러 준비 완료 (수동 호출용)");
 }
 
 export function stopScheduler(): void {
-  if (schedulerTask) {
-    schedulerTask.stop();
-    schedulerTask = null;
-  }
-  if (dailyDigestTask) {
-    dailyDigestTask.stop();
-    dailyDigestTask = null;
-  }
-  if (weeklyDigestTask) {
-    weeklyDigestTask.stop();
-    weeklyDigestTask = null;
-  }
   console.log("[scheduler] 스케줄러 중지됨");
 }

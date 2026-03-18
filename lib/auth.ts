@@ -7,9 +7,9 @@ export function hashPassword(password: string): string {
   return createHash("sha256").update(password).digest("hex");
 }
 
-export function generateSessionToken(userId: number, username: string): string {
+export function generateSessionToken(userId: number, username: string, role: string): string {
   return createHash("sha256")
-    .update(`${userId}:${username}:${AUTH_SECRET}`)
+    .update(`${userId}:${username}:${role}:${AUTH_SECRET}`)
     .digest("hex");
 }
 
@@ -20,23 +20,24 @@ export async function authenticateUser(username: string, password: string) {
   return user;
 }
 
-export function parseSessionToken(token: string): { userId: number; username: string } | null {
-  // Token format: "userId:username:hash"
-  // We store it as a cookie in format "userId:username:hash"
+export function parseSessionToken(token: string): { userId: number; username: string; role: string } | null {
+  // Token format: "userId:username:role:hash"
+  // We store it as a cookie in format "userId:username:role:hash"
   const parts = token.split(":");
-  if (parts.length < 3) return null;
+  if (parts.length < 4) return null;
   const userId = parseInt(parts[0], 10);
   const username = parts[1];
-  const hash = parts.slice(2).join(":");
-  if (isNaN(userId) || !username) return null;
-  const expectedHash = generateSessionToken(userId, username);
+  const role = parts[2];
+  const hash = parts.slice(3).join(":");
+  if (isNaN(userId) || !username || !role) return null;
+  const expectedHash = generateSessionToken(userId, username, role);
   if (hash !== expectedHash) return null;
-  return { userId, username };
+  return { userId, username, role };
 }
 
-export function createSessionCookie(userId: number, username: string): string {
-  const hash = generateSessionToken(userId, username);
-  return `${userId}:${username}:${hash}`;
+export function createSessionCookie(userId: number, username: string, role: string): string {
+  const hash = generateSessionToken(userId, username, role);
+  return `${userId}:${username}:${role}:${hash}`;
 }
 
 export async function getCurrentUser(sessionToken: string) {

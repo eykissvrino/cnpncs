@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { authenticateUser, createSessionCookie } from "@/lib/auth";
+import { prisma } from "@/lib/db";
 
 export async function POST(request: NextRequest) {
   try {
@@ -17,7 +18,27 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "아이디 또는 비밀번호가 올바르지 않습니다." }, { status: 401 });
     }
 
-    const token = createSessionCookie(user.id, user.username);
+    // lastLoginAt, loginCount 업데이트
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        lastLoginAt: new Date(),
+        loginCount: { increment: 1 },
+      },
+    });
+
+    // AccessLog에 로그인 기록
+    const clientIp = request.headers.get("x-forwarded-for") || request.headers.get("x-real-ip") || "unknown";
+    await prisma.accessLog.create({
+      data: {
+        userId: user.id,
+        action: "login",
+        detail: `${user.name} (${user.username}) 로그인`,
+        ip: clientIp,
+      },
+    });
+
+    const token = createSessionCookie(user.id, user.username, user.role);
     const response = NextResponse.json({
       success: true,
       user: { id: user.id, name: user.name, department: user.department, role: user.role },

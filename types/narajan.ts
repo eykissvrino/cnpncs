@@ -51,6 +51,24 @@ export interface OrderPlanItem {
   bsnsDivNm?: string;
 }
 
+export interface BidResultItem {
+  bidNtceNo?: string;
+  bidNtceOrd?: string;
+  bidNtceNm?: string;
+  opengDt?: string;
+  sucsfbidMthdNm?: string;
+  prcbdrNm?: string;
+  prcbdrBizno?: string;
+  bidprcAmt?: string;
+  rnkng?: string;
+  ntceInsttNm?: string;
+  dminsttNm?: string;
+  sucsfbidAmt?: string;
+  sucsfbidLwltRate?: string;
+  rgstDt?: string;
+  bidClsfcNm?: string;
+}
+
 export interface ApiResponseBody<T> {
   // items can be a direct array, wrapped in {item:...}, empty string, or null
   items: unknown;
@@ -73,7 +91,7 @@ export type SearchType = "all" | "bid" | "prespec" | "order";
 
 export interface UnifiedResult {
   id: string;
-  type: "bid" | "prespec" | "order";
+  type: "bid" | "prespec" | "order" | "bidresult";
   typeLabel: string;
   title: string;
   agency: string;

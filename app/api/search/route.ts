@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { searchBidAnnouncements, searchPreSpecs, searchOrderPlans } from "@/lib/narajan-api";
+import { searchBidAnnouncements, searchPreSpecs, searchOrderPlans, searchBidResults } from "@/lib/narajan-api";
 import { prisma } from "@/lib/db";
 import { rateLimit } from "@/lib/rate-limit";
 import type { UnifiedResult } from "@/types/narajan";
@@ -31,10 +31,10 @@ export async function GET(request: NextRequest) {
       take: 200,
     });
 
-    const dbMapped: UnifiedResult[] = dbResults.map((r) => ({
+    const dbMapped: UnifiedResult[] = dbResults.map((r: typeof dbResults[0]) => ({
       id: r.bidNumber || String(r.id),
-      type: r.type as "bid" | "prespec" | "order",
-      typeLabel: r.type === "bid" ? "입찰공고" : r.type === "prespec" ? "사전규격" : "발주계획",
+      type: r.type as "bid" | "prespec" | "order" | "bidresult",
+      typeLabel: r.type === "bid" ? "입찰공고" : r.type === "prespec" ? "사전규격" : r.type === "order" ? "발주계획" : "개찰결과",
       title: r.title,
       agency: r.agency,
       budget: r.budget || "-",
@@ -47,6 +47,7 @@ export async function GET(request: NextRequest) {
     const dbBid = dbMapped.filter((r) => r.type === "bid");
     const dbPrespec = dbMapped.filter((r) => r.type === "prespec");
     const dbOrder = dbMapped.filter((r) => r.type === "order");
+    const dbBidResult = dbMapped.filter((r) => r.type === "bidresult");
 
     const dbTotal = dbMapped.length;
 
@@ -55,29 +56,33 @@ export async function GET(request: NextRequest) {
         bid: dbBid,
         prespec: dbPrespec,
         order: dbOrder,
+        bidresult: dbBidResult,
         total: dbTotal,
         source: "db",
       });
     }
 
-    const [bidResult, prespecResult, orderResult] = await Promise.allSettled([
+    const [bidResult, prespecResult, orderResult, bidResultResult] = await Promise.allSettled([
       searchBidAnnouncements(keyword, page),
       searchPreSpecs(keyword, page),
       searchOrderPlans(keyword, page),
+      searchBidResults(keyword, page),
     ]);
 
     const apiBid = bidResult.status === "fulfilled" ? bidResult.value : [];
     const apiPrespec = prespecResult.status === "fulfilled" ? prespecResult.value : [];
     const apiOrder = orderResult.status === "fulfilled" ? orderResult.value : [];
+    const apiBidResult = bidResultResult.status === "fulfilled" ? bidResultResult.value : [];
 
     const existingIds = new Set(dbMapped.map((r) => r.id));
-    const newFromApi = [...apiBid, ...apiPrespec, ...apiOrder].filter(
+    const newFromApi = [...apiBid, ...apiPrespec, ...apiOrder, ...apiBidResult].filter(
       (r) => !existingIds.has(r.id)
     );
 
     const bid = [...dbBid, ...apiBid.filter((r) => !existingIds.has(r.id))];
     const prespec = [...dbPrespec, ...apiPrespec.filter((r) => !existingIds.has(r.id))];
     const order = [...dbOrder, ...apiOrder.filter((r) => !existingIds.has(r.id))];
+    const bidresult = [...dbBidResult, ...apiBidResult.filter((r) => !existingIds.has(r.id))];
 
     for (const item of newFromApi) {
       try {
@@ -107,7 +112,8 @@ export async function GET(request: NextRequest) {
       bid,
       prespec,
       order,
-      total: bid.length + prespec.length + order.length,
+      bidresult,
+      total: bid.length + prespec.length + order.length + bidresult.length,
       source: "api",
     });
   } catch (error) {

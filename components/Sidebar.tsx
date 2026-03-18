@@ -2,15 +2,24 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { LayoutDashboard, Tag, Bell, Building2, LogOut } from "lucide-react";
+import { LayoutDashboard, Tag, Building2, LogOut, Users, Settings, BarChart3, TrendingUp } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { useState, useEffect } from "react";
 
-const navItems = [
-  { href: "/", icon: LayoutDashboard, label: "대시보드" },
-  { href: "/keywords", icon: Tag, label: "키워드 관리" },
-  { href: "/settings", icon: Bell, label: "알림 설정" },
-];
+interface NavItem {
+  href: string;
+  icon: React.ReactNode;
+  label: string;
+}
+
+interface User {
+  id: number;
+  username: string;
+  name: string;
+  department: string;
+  role: string;
+}
 
 interface SidebarProps {
   onNavigate?: () => void;
@@ -19,6 +28,41 @@ interface SidebarProps {
 export default function Sidebar({ onNavigate }: SidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
+  const [user, setUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchUser = async () => {
+      try {
+        const res = await fetch("/api/auth/me");
+        if (res.ok) {
+          const data = (await res.json()) as User;
+          setUser(data);
+        }
+      } catch {
+        // 사용자 정보 조회 실패
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchUser();
+  }, []);
+
+  const isAdmin = user?.role === "admin";
+
+  const userMenuItems: NavItem[] = [
+    { href: "/", icon: <LayoutDashboard className="h-4 w-4 shrink-0" />, label: "대시보드" },
+    { href: "/keywords", icon: <Tag className="h-4 w-4 shrink-0" />, label: "키워드 관리" },
+  ];
+
+  const adminMenuItems: NavItem[] = [
+    { href: "/admin", icon: <Users className="h-4 w-4 shrink-0" />, label: "사용자 관리" },
+    { href: "/admin/keywords", icon: <Settings className="h-4 w-4 shrink-0" />, label: "키워드 할당" },
+    { href: "/admin/analytics", icon: <BarChart3 className="h-4 w-4 shrink-0" />, label: "이용 현황" },
+    { href: "/analytics", icon: <TrendingUp className="h-4 w-4 shrink-0" />, label: "수주 분석" },
+  ];
+
+  const navItems = [...userMenuItems, ...(isAdmin ? adminMenuItems : [])];
 
   const handleLogout = async () => {
     await fetch("/api/auth/logout", { method: "POST" });
@@ -42,9 +86,9 @@ export default function Sidebar({ onNavigate }: SidebarProps) {
       </div>
 
       {/* 네비게이션 */}
-      <nav className="flex-1 px-3 py-4 space-y-1">
+      <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
         <p className="px-3 text-xs font-medium text-sidebar-foreground/40 uppercase tracking-wider mb-2">메뉴</p>
-        {navItems.map(({ href, icon: Icon, label }) => {
+        {navItems.map(({ href, icon, label }) => {
           const isActive = pathname === href;
           return (
             <Link
@@ -58,15 +102,27 @@ export default function Sidebar({ onNavigate }: SidebarProps) {
                   : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground"
               )}
             >
-              <Icon className="h-4 w-4 shrink-0" />
+              {icon}
               {label}
             </Link>
           );
         })}
       </nav>
 
+      {/* 사용자 정보 */}
+      {!loading && user && (
+        <div className="px-4 py-3 border-t border-sidebar-border bg-sidebar-accent/50">
+          <p className="text-xs text-sidebar-foreground/60">로그인 사용자</p>
+          <p className="text-sm font-semibold text-sidebar-foreground truncate">{user.name}</p>
+          <p className="text-xs text-sidebar-foreground/50 truncate">{user.department}</p>
+          {isAdmin && (
+            <p className="text-xs text-amber-600 font-medium mt-1">관리자</p>
+          )}
+        </div>
+      )}
+
       {/* 하단: 로그아웃 + 버전 */}
-      <div className="px-3 pb-2">
+      <div className="px-3 pb-2 border-t border-sidebar-border">
         <Button
           variant="ghost"
           size="sm"
@@ -78,7 +134,7 @@ export default function Sidebar({ onNavigate }: SidebarProps) {
         </Button>
       </div>
       <div className="px-6 py-3 border-t border-sidebar-border">
-        <p className="text-xs text-sidebar-foreground/40">나라장터 모니터 v1.0</p>
+        <p className="text-xs text-sidebar-foreground/40">나라장터 모니터 v2.0</p>
         <p className="text-xs text-sidebar-foreground/30 mt-0.5">조달청 공공데이터 연동</p>
       </div>
     </aside>

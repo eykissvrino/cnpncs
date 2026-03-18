@@ -12,12 +12,13 @@ async function sha256Hex(input: string): Promise<string> {
 
 async function validateToken(token: string): Promise<boolean> {
   const parts = token.split(":");
-  if (parts.length < 3) return false;
+  if (parts.length < 4) return false;
   const userId = parseInt(parts[0], 10);
   const username = parts[1];
-  const hash = parts.slice(2).join(":");
-  if (isNaN(userId) || !username) return false;
-  const expectedHash = await sha256Hex(`${userId}:${username}:${AUTH_SECRET}`);
+  const role = parts[2];
+  const hash = parts.slice(3).join(":");
+  if (isNaN(userId) || !username || !role) return false;
+  const expectedHash = await sha256Hex(`${userId}:${username}:${role}:${AUTH_SECRET}`);
   return hash === expectedHash;
 }
 
@@ -43,6 +44,25 @@ export async function middleware(request: NextRequest) {
     }
   }
 
+  // /admin 경로 접근 시 admin 권한 확인
+  if (pathname.startsWith("/admin")) {
+    const sessionToken = request.cookies.get("narajan-session")?.value;
+    if (!sessionToken || !(await validateToken(sessionToken))) {
+      const response = pathname.startsWith("/api/")
+        ? NextResponse.json({ error: "세션이 만료되었습니다." }, { status: 401 })
+        : NextResponse.redirect(new URL("/login", request.url));
+      response.cookies.delete("narajan-session");
+      return response;
+    }
+    const parts = sessionToken.split(":");
+    const role = parts[2];
+    if (role !== "admin") {
+      return pathname.startsWith("/api/")
+        ? NextResponse.json({ error: "접근 권한이 없습니다." }, { status: 403 })
+        : NextResponse.redirect(new URL("/", request.url));
+    }
+  }
+
   // 세션 쿠키 확인
   const sessionToken = request.cookies.get("narajan-session")?.value;
   if (!sessionToken || !(await validateToken(sessionToken))) {
@@ -59,11 +79,12 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
-  // userId를 헤더에 추가하여 API에서 사용
+  // userId, username, role을 헤더에 추가하여 API에서 사용
   const parts = sessionToken.split(":");
   const response = NextResponse.next();
   response.headers.set("x-user-id", parts[0]);
   response.headers.set("x-username", parts[1]);
+  response.headers.set("x-user-role", parts[2]);
   return response;
 }
 

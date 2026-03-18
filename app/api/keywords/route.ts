@@ -10,11 +10,28 @@ function getUserId(request: NextRequest): number | null {
   return isNaN(parsed) ? null : parsed;
 }
 
+async function getUserRole(userId: number): Promise<string | null> {
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  return user?.role ?? null;
+}
+
 export async function GET(request: NextRequest) {
   try {
     const userId = getUserId(request);
+    if (!userId) {
+      return NextResponse.json({ error: "인증이 필요합니다." }, { status: 401 });
+    }
+
+    const role = await getUserRole(userId);
+    let whereClause: any = {};
+
+    // admin은 모든 키워드 반환, user는 자신의 키워드만
+    if (role !== "admin") {
+      whereClause = { userId };
+    }
+
     const keywords = await prisma.keyword.findMany({
-      where: userId ? { userId } : {},
+      where: whereClause,
       orderBy: { createdAt: "desc" },
       include: {
         _count: { select: { results: true } },
@@ -29,6 +46,10 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const userId = getUserId(request);
+    if (!userId) {
+      return NextResponse.json({ error: "인증이 필요합니다." }, { status: 401 });
+    }
+
     const body = await request.json();
     const parsed = keywordCreateSchema.safeParse(body);
     if (!parsed.success) {
@@ -38,8 +59,16 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const role = await getUserRole(userId);
+    let targetUserId = userId;
+
+    // admin이 targetUserId를 지정하면 해당 사용자에게 할당
+    if (role === "admin" && "targetUserId" in body && body.targetUserId) {
+      targetUserId = body.targetUserId;
+    }
+
     const keyword = await prisma.keyword.create({
-      data: { name: parsed.data.name, userId },
+      data: { name: parsed.data.name, userId: targetUserId },
     });
     return NextResponse.json(keyword, { status: 201 });
   } catch (error) {
@@ -53,6 +82,11 @@ export async function POST(request: NextRequest) {
 
 export async function PATCH(request: NextRequest) {
   try {
+    const userId = getUserId(request);
+    if (!userId) {
+      return NextResponse.json({ error: "인증이 필요합니다." }, { status: 401 });
+    }
+
     const body = await request.json();
     const parsed = keywordPatchSchema.safeParse(body);
     if (!parsed.success) {
@@ -62,11 +96,24 @@ export async function PATCH(request: NextRequest) {
       );
     }
 
-    const keyword = await prisma.keyword.update({
+    // 권한 확인
+    const role = await getUserRole(userId);
+    const keyword = await prisma.keyword.findUnique({ where: { id: parsed.data.id } });
+
+    if (!keyword) {
+      return NextResponse.json({ error: "키워드를 찾을 수 없습니다." }, { status: 404 });
+    }
+
+    // admin이 아니면 자신의 키워드만 수정 가능
+    if (role !== "admin" && keyword.userId !== userId) {
+      return NextResponse.json({ error: "권한이 없습니다." }, { status: 403 });
+    }
+
+    const updated = await prisma.keyword.update({
       where: { id: parsed.data.id },
       data: { active: parsed.data.active },
     });
-    return NextResponse.json(keyword);
+    return NextResponse.json(updated);
   } catch {
     return NextResponse.json({ error: "키워드 수정 실패" }, { status: 500 });
   }
@@ -74,6 +121,11 @@ export async function PATCH(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
   try {
+    const userId = getUserId(request);
+    if (!userId) {
+      return NextResponse.json({ error: "인증이 필요합니다." }, { status: 401 });
+    }
+
     const { searchParams } = new URL(request.url);
     const idParsed = z.coerce.number().int().positive().safeParse(searchParams.get("id"));
     if (!idParsed.success) {
@@ -81,6 +133,18 @@ export async function DELETE(request: NextRequest) {
     }
 
     const id = idParsed.data;
+    const role = await getUserRole(userId);
+    const keyword = await prisma.keyword.findUnique({ where: { id } });
+
+    if (!keyword) {
+      return NextResponse.json({ error: "키워드를 찾을 수 없습니다." }, { status: 404 });
+    }
+
+    // admin이 아니면 자신의 키워드만 삭제 가능
+    if (role !== "admin" && keyword.userId !== userId) {
+      return NextResponse.json({ error: "권한이 없습니다." }, { status: 403 });
+    }
+
     await prisma.crawlResult.deleteMany({ where: { keywordId: id } });
     await prisma.keyword.delete({ where: { id } });
     return NextResponse.json({ success: true });

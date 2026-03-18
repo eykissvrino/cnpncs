@@ -1,0 +1,14 @@
+-- AlterTable
+ALTER TABLE "User" ADD COLUMN "lastLoginAt" DATETIME,
+ADD COLUMN "loginCount" INTEGER NOT NULL DEFAULT 0;
+
+-- CreateTable
+CREATE TABLE "AccessLog" (
+    "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    "userId" INTEGER NOT NULL,
+    "action" TEXT NOT NULL,
+    "detail" TEXT,
+    "ip" TEXT,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "AccessLog_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User" ("id") ON DELETE RESTRICT ON UPDATE CASCADE
+);
