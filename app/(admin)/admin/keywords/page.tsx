@@ -42,8 +42,8 @@ export default function AdminKeywordsPage() {
     try {
       const res = await fetch("/api/admin/users");
       if (!res.ok) throw new Error("조회 실패");
-      const data = (await res.json()) as User[];
-      setUsers(data);
+      const data = (await res.json()) as { users: User[] };
+      setUsers(data.users);
     } catch {
       toast.error("사용자 목록 조회 실패");
     } finally {
@@ -58,10 +58,18 @@ export default function AdminKeywordsPage() {
     }
     setKeywordsLoading(true);
     try {
-      const res = await fetch(`/api/admin/keywords?userId=${userId}`);
+      const res = await fetch("/api/admin/keywords");
       if (!res.ok) throw new Error("조회 실패");
-      const data = (await res.json()) as UserKeyword[];
-      setUserKeywords(data);
+      const data = (await res.json()) as {
+        total: number;
+        byUser: Array<{
+          userId: number;
+          keywords: UserKeyword[];
+        }>;
+      };
+      // 선택한 사용자의 키워드만 추출
+      const userGroup = data.byUser.find((g) => g.userId === parseInt(userId));
+      setUserKeywords(userGroup?.keywords || []);
     } catch {
       toast.error("키워드 목록 조회 실패");
       setUserKeywords([]);
