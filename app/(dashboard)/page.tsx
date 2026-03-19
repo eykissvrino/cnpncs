@@ -94,12 +94,35 @@ export default function HomePage() {
     setCrawling(true);
     try {
       const res = await fetch("/api/cron");
-      const data = await res.json() as { newCount?: number; errors?: string[] };
-      toast.success(`크롤링 완료: 신규 ${data.newCount ?? 0}건`);
-      await loadDashboard();
+      const data = await res.json() as { success?: boolean; message?: string; running?: boolean; newCount?: number; error?: string };
+
+      if (data.running) {
+        toast.info(data.message || "크롤링이 시작되었습니다. 2~3분 후 새로고침 해주세요.");
+        // 백그라운드 크롤링 폴링: 30초 간격으로 완료 체크
+        const pollInterval = setInterval(async () => {
+          try {
+            const statusRes = await fetch("/api/cron?action=status");
+            const status = await statusRes.json() as { running: boolean; lastResult?: { newCount: number } };
+            if (!status.running) {
+              clearInterval(pollInterval);
+              setCrawling(false);
+              toast.success(`크롤링 완료: 신규 ${status.lastResult?.newCount ?? 0}건 수집`);
+              await loadDashboard();
+            }
+          } catch { /* 폴링 실패 무시 */ }
+        }, 15_000);
+        // 최대 10분 후 폴링 중지
+        setTimeout(() => { clearInterval(pollInterval); setCrawling(false); }, 600_000);
+      } else if (data.error) {
+        toast.error(data.error);
+        setCrawling(false);
+      } else {
+        toast.success(`크롤링 완료: 신규 ${data.newCount ?? 0}건`);
+        setCrawling(false);
+        await loadDashboard();
+      }
     } catch {
-      toast.error("크롤링 실패");
-    } finally {
+      toast.error("크롤링 요청 실패");
       setCrawling(false);
     }
   };
