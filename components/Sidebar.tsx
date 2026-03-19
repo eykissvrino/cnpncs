@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { LayoutDashboard, Tag, Building2, LogOut, Users, Settings, BarChart3, TrendingUp } from "lucide-react";
+import { LayoutDashboard, Tag, Building2, LogOut, Users, BarChart3, TrendingUp } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { useState, useEffect } from "react";
@@ -57,7 +57,6 @@ export default function Sidebar({ onNavigate }: SidebarProps) {
 
   const adminMenuItems: NavItem[] = [
     { href: "/admin", icon: <Users className="h-4 w-4 shrink-0" />, label: "사용자 관리" },
-    { href: "/admin/keywords", icon: <Settings className="h-4 w-4 shrink-0" />, label: "키워드 할당" },
     { href: "/admin/analytics", icon: <BarChart3 className="h-4 w-4 shrink-0" />, label: "이용 현황" },
     { href: "/analytics", icon: <TrendingUp className="h-4 w-4 shrink-0" />, label: "수주 분석" },
   ];
