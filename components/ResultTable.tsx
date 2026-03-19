@@ -21,6 +21,59 @@ interface ResultTableProps {
   onRowClick?: (item: UnifiedResult & { isNew?: boolean }) => void;
 }
 
+// 마감일까지 남은 일수 계산 + 스타일 반환
+function getDeadlineInfo(deadline: string | undefined): {
+  label: string;
+  className: string;
+} {
+  if (!deadline || deadline === "-" || deadline === "—") {
+    return { label: "—", className: "text-muted-foreground" };
+  }
+
+  // "2026-03-25" 또는 "2026.03.25" 형식 파싱
+  const cleaned = deadline.replace(/\./g, "-").substring(0, 10);
+  const deadlineDate = new Date(cleaned + "T23:59:59");
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const diffMs = deadlineDate.getTime() - today.getTime();
+  const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+
+  if (diffDays < 0) {
+    // 마감일 지남
+    return {
+      label: `${deadline} (마감)`,
+      className: "text-muted-foreground/50 line-through",
+    };
+  } else if (diffDays === 0) {
+    // 오늘 마감
+    return {
+      label: `${deadline} (오늘)`,
+      className: "text-red-600 font-bold bg-red-50 rounded px-1",
+    };
+  } else if (diffDays <= 2) {
+    // 1~2일 남음
+    return {
+      label: `${deadline} (D-${diffDays})`,
+      className: "text-red-600 font-semibold",
+    };
+  } else if (diffDays <= 5) {
+    // 3~5일 남음
+    return {
+      label: `${deadline} (D-${diffDays})`,
+      className: "text-orange-600 font-medium",
+    };
+  } else if (diffDays <= 7) {
+    // 6~7일 남음
+    return {
+      label: `${deadline} (D-${diffDays})`,
+      className: "text-amber-600",
+    };
+  }
+  // 7일 이상 여유
+  return { label: deadline, className: "text-muted-foreground" };
+}
+
 const TYPE_STYLES: Record<string, { bg: string; text: string; border: string; label: string }> = {
   bid: {
     bg: "bg-blue-50",
@@ -118,8 +171,11 @@ export default function ResultTable({ results, isLoading, onRowClick }: ResultTa
                   <TableCell className="text-center text-xs text-muted-foreground whitespace-nowrap">
                     {item.postDate}
                   </TableCell>
-                  <TableCell className="text-center text-xs text-muted-foreground whitespace-nowrap">
-                    {item.deadline || "—"}
+                  <TableCell className="text-center text-xs whitespace-nowrap">
+                    {(() => {
+                      const info = getDeadlineInfo(item.deadline);
+                      return <span className={info.className}>{info.label}</span>;
+                    })()}
                   </TableCell>
                   <TableCell className="text-center">
                     {item.type !== "order" && item.url ? (
@@ -193,7 +249,10 @@ export default function ResultTable({ results, isLoading, onRowClick }: ResultTa
               </div>
               <div className="flex items-center justify-between text-xs text-muted-foreground mt-1">
                 <span>{item.postDate}</span>
-                {item.deadline && <span>마감 {item.deadline}</span>}
+                {item.deadline && (() => {
+                  const info = getDeadlineInfo(item.deadline);
+                  return <span className={info.className}>{info.label}</span>;
+                })()}
               </div>
             </div>
           );
