@@ -59,14 +59,22 @@ function getDateRange(daysBack = 30): { inqryBgnDt: string; inqryEndDt: string }
 async function fetchWithRetry<T>(
   url: string,
   params: Record<string, string>,
-  retries = 1
+  retries = 2
 ): Promise<T> {
   try {
-    const response = await axios.get<T>(url, { params, timeout: 15000 });
+    const response = await axios.get<T>(url, { params, timeout: 20000 });
     return response.data;
   } catch (error) {
+    // 429 Rate Limit: 더 오래 대기 후 재시도
+    if (axios.isAxiosError(error) && error.response?.status === 429) {
+      if (retries > 0) {
+        console.log(`[API] 429 Rate Limit — ${3 * (3 - retries)}초 대기 후 재시도 (${retries}회 남음)`);
+        await new Promise((r) => setTimeout(r, 3000 * (3 - retries)));
+        return fetchWithRetry<T>(url, params, retries - 1);
+      }
+    }
     if (retries > 0) {
-      await new Promise((r) => setTimeout(r, 1000));
+      await new Promise((r) => setTimeout(r, 1500));
       return fetchWithRetry<T>(url, params, retries - 1);
     }
     throw error;
@@ -400,13 +408,13 @@ export async function crawlAllBidResults(daysBack = 7): Promise<UnifiedResult[]>
             });
           }
         }
-        if (i + 10 < pages.length) await new Promise((r) => setTimeout(r, 200));
+        if (i + 10 < pages.length) await new Promise((r) => setTimeout(r, 800));
       }
     } catch {
       // 청크 실패는 무시하고 다음 청크 진행
     }
 
-    if (offset + CHUNK_DAYS < daysBack) await new Promise((r) => setTimeout(r, 300));
+    if (offset + CHUNK_DAYS < daysBack) await new Promise((r) => setTimeout(r, 1500));
   }
 
   return allItems;
@@ -476,14 +484,14 @@ export async function crawlAllBids(daysBack = 7): Promise<UnifiedResult[]> {
             });
           }
         }
-        if (i + 10 < pages.length) await new Promise((r) => setTimeout(r, 200));
+        if (i + 10 < pages.length) await new Promise((r) => setTimeout(r, 800));
       }
     } catch {
       // 청크 실패는 무시하고 다음 청크 진행
     }
 
     // 청크 간 300ms 대기 (rate limit 방지)
-    if (offset + CHUNK_DAYS < daysBack) await new Promise((r) => setTimeout(r, 300));
+    if (offset + CHUNK_DAYS < daysBack) await new Promise((r) => setTimeout(r, 1500));
   }
 
   return allItems;
@@ -539,13 +547,13 @@ export async function crawlAllPreSpecs(): Promise<UnifiedResult[]> {
             allItems.push(mapPreSpecItem(item));
           }
         }
-        if (i + 10 < pages.length) await new Promise((r) => setTimeout(r, 200));
+        if (i + 10 < pages.length) await new Promise((r) => setTimeout(r, 800));
       }
     } catch (error) {
       console.error(`[사전규격 크롤링 실패] ${endpoint}:`, (error as Error)?.message);
     }
     // 엔드포인트 간 300ms 대기
-    await new Promise((r) => setTimeout(r, 300));
+    await new Promise((r) => setTimeout(r, 1500));
   }
   console.log(`[사전규격 크롤링 완료] 총 ${allItems.length}건`);
   return allItems;
@@ -595,7 +603,7 @@ export async function crawlAllOrderPlans(): Promise<UnifiedResult[]> {
           });
         }
       }
-      if (i + 10 < pages.length) await new Promise((r) => setTimeout(r, 200));
+      if (i + 10 < pages.length) await new Promise((r) => setTimeout(r, 800));
     }
     return allItems;
   } catch {

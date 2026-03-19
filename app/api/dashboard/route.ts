@@ -79,14 +79,8 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // 사용자의 키워드에만 해당하는 CrawlResult 개수
-    const dbTotal = await prisma.crawlResult.count({
-      where: {
-        keyword: {
-          id: { in: keywords.map((k: typeof keywords[0]) => k.id) },
-        },
-      },
-    });
+    // 전체 수집 건수 (키워드 매칭 여부 무관)
+    const dbTotal = await prisma.crawlResult.count();
 
     return NextResponse.json({
       keywords: keywords.map((k: typeof keywords[0]) => ({ id: k.id, name: k.name })),

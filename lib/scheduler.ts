@@ -186,8 +186,8 @@ export async function runCrawl(daysBack?: number): Promise<{ newCount: number; e
   // daysBack이 지정되지 않으면 DB 상태에 따라 자동 결정
   if (!daysBack) {
     const count = await prisma.crawlResult.count();
-    daysBack = count < 100 ? 60 : 14;
-    console.log(`[crawler] DB ${count < 100 ? `${count}건 부족 → 초기 60일` : `${count}건 존재 → 최근 14일`} 크롤링`);
+    daysBack = count < 100 ? 30 : 14;
+    console.log(`[crawler] DB ${count < 100 ? `${count}건 부족 → 초기 30일` : `${count}건 존재 → 최근 14일`} 크롤링`);
   }
   const crawlResult = await runFullCrawl(daysBack);
   const notifyResult = await runKeywordNotify();
