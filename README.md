@@ -1,46 +1,32 @@
-# 나라장터 모니터
+# 나라장터 모니터 v2.0
 
-나라장터 발주계획 · 사전규격 · 입찰공고를 키워드로 통합 검색하는 웹 모니터링 도구입니다.
+시앤피컨설팅 나라장터 용역 입찰공고 모니터링 + 수주 분석 웹앱입니다.
 
 ## 주요 기능
 
-- **통합 검색**: 발주계획 / 사전규격 / 입찰공고를 키워드 하나로 동시 검색
-- **키워드 즐겨찾기**: 자주 사용하는 키워드를 저장하고 자동 크롤링
-- **자동 알림**: 신규 공고 발견 시 이메일 / 슬랙으로 알림 발송
+- **통합 검색**: 발주계획 / 사전규격 / 입찰공고 / 개찰결과를 키워드로 동시 검색
+- **본부별 키워드 모니터링**: 10개 본부별 키워드 격리 + 관리자 할당
+- **자동 크롤링**: 외부 스케줄러(Railway Cron)로 최신 데이터 수집 (최대 90일)
+- **수주 분석**: 기관별 발주 현황, 기업별 수주 순위, 월별 트렌드 차트
+- **관리자 대시보드**: 사용자 관리, 키워드 할당, 이용 현황 모니터링
 - **엑셀 내보내기**: 검색 결과를 .xlsx 파일로 다운로드
-- **자동 크롤링**: 설정한 주기마다 활성 키워드를 자동 검색
+
+## 환경변수
+
+```env
+DATABASE_URL=file:/data/narajan.db   # libsql DB 경로
+NARAJAN_API_KEY=your_api_key         # 공공데이터포털 API 키
+AUTH_SECRET=your_secret              # 세션 서명키
+CRON_SECRET=your_cron_secret         # 크롤링 API 보호키
+```
 
 ## 실행 방법
 
-### 1. 환경변수 설정
-
-`.env.local` 파일을 열어 값을 입력합니다:
-
-```env
-# 나라장터 API 키 (공공데이터포털에서 발급)
-NARAJAN_API_KEY=your_api_key_here
-
-# 이메일 알림 (Gmail 앱 비밀번호 필요)
-EMAIL_USER=your@gmail.com
-EMAIL_PASS=your_app_password
-EMAIL_TO=recipient@email.com
-
-# 슬랙 알림 (선택)
-SLACK_BOT_TOKEN=xoxb-your-token
-SLACK_CHANNEL_ID=C1234567890
-```
-
-### 2. 개발 서버 실행
-
 ```bash
+# 개발 서버
 npm run dev
-```
 
-http://localhost:3000 접속
-
-### 3. 프로덕션 빌드
-
-```bash
+# 프로덕션 빌드
 npm run build
 npm start
 ```
@@ -48,15 +34,18 @@ npm start
 ## API 키 발급
 
 1. [공공데이터포털](https://www.data.go.kr) 회원가입
-2. 다음 서비스를 신청합니다:
-   - **조달청_나라장터 입찰공고정보서비스**
-   - **조달청_나라장터 사전규격정보서비스**
-   - **조달청_나라장터 발주계획현황서비스**
-3. 발급된 인증키를 `.env.local`의 `NARAJAN_API_KEY`에 입력
+2. 다음 6종 서비스를 신청합니다:
+   - 조달청_나라장터 입찰공고정보서비스
+   - 조달청_나라장터 사전규격정보서비스
+   - 조달청_나라장터 발주계획현황서비스
+   - 조달청_나라장터 낙찰정보서비스
+   - 조달청_나라장터 계약정보서비스
+   - 조달청_나라장터 표준서비스
+3. 발급된 인증키를 환경변수 `NARAJAN_API_KEY`에 입력
 
 ## 기술 스택
 
-- **Frontend**: Next.js 15, React 19, Tailwind CSS, ShadCN/ui
-- **Backend**: Next.js API Routes, node-cron
-- **Database**: Prisma 7 + SQLite (libsql)
-- **알림**: Nodemailer (Gmail), Slack Web API
+- **Frontend**: Next.js 16, React 19, Tailwind CSS 4, shadcn/ui, Recharts
+- **Backend**: Next.js API Routes
+- **Database**: Prisma 6 + SQLite (libsql)
+- **배포**: Railway (auto-deploy on main push)

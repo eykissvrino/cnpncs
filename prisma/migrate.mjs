@@ -27,6 +27,40 @@ const users = [
 async function main() {
   console.log("[migrate] Starting migration...");
 
+  // Keyword 테이블 (기본)
+  await client.execute(`
+    CREATE TABLE IF NOT EXISTS "Keyword" (
+      "id" INTEGER PRIMARY KEY AUTOINCREMENT,
+      "name" TEXT NOT NULL,
+      "active" INTEGER NOT NULL DEFAULT 1,
+      "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "userId" INTEGER REFERENCES "User"("id")
+    )
+  `);
+  console.log("[migrate] Keyword table created/verified");
+
+  // CrawlResult 테이블
+  await client.execute(`
+    CREATE TABLE IF NOT EXISTS "CrawlResult" (
+      "id" INTEGER PRIMARY KEY AUTOINCREMENT,
+      "type" TEXT NOT NULL,
+      "title" TEXT NOT NULL,
+      "agency" TEXT NOT NULL,
+      "budget" TEXT,
+      "deadline" TEXT,
+      "postDate" TEXT NOT NULL,
+      "bidNumber" TEXT UNIQUE,
+      "url" TEXT,
+      "rawData" TEXT NOT NULL,
+      "isNew" INTEGER NOT NULL DEFAULT 1,
+      "notified" INTEGER NOT NULL DEFAULT 0,
+      "keywordId" INTEGER REFERENCES "Keyword"("id"),
+      "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+  console.log("[migrate] CrawlResult table created/verified");
+
+  // User 테이블
   await client.execute(`
     CREATE TABLE IF NOT EXISTS "User" (
       "id" INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -36,11 +70,74 @@ async function main() {
       "department" TEXT NOT NULL,
       "role" TEXT NOT NULL DEFAULT 'user',
       "active" INTEGER NOT NULL DEFAULT 1,
+      "lastLoginAt" DATETIME,
+      "loginCount" INTEGER NOT NULL DEFAULT 0,
       "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
     )
   `);
   console.log("[migrate] User table created/verified");
 
+  // User 테이블에 누락된 컬럼 추가 (기존 DB 호환)
+  for (const col of [
+    { name: "lastLoginAt", def: `ALTER TABLE "User" ADD COLUMN "lastLoginAt" DATETIME` },
+    { name: "loginCount", def: `ALTER TABLE "User" ADD COLUMN "loginCount" INTEGER NOT NULL DEFAULT 0` },
+  ]) {
+    try { await client.execute(col.def); console.log(`[migrate] User.${col.name} 컬럼 추가됨`); }
+    catch { console.log(`[migrate] User.${col.name} 컬럼 이미 존재`); }
+  }
+
+  // AccessLog 테이블
+  await client.execute(`
+    CREATE TABLE IF NOT EXISTS "AccessLog" (
+      "id" INTEGER PRIMARY KEY AUTOINCREMENT,
+      "userId" INTEGER NOT NULL REFERENCES "User"("id"),
+      "action" TEXT NOT NULL,
+      "detail" TEXT,
+      "ip" TEXT,
+      "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+  console.log("[migrate] AccessLog table created/verified");
+
+  // BidResult 테이블
+  await client.execute(`
+    CREATE TABLE IF NOT EXISTS "BidResult" (
+      "id" INTEGER PRIMARY KEY AUTOINCREMENT,
+      "bidNtceNo" TEXT NOT NULL,
+      "bidNtceOrd" TEXT,
+      "bidNtceNm" TEXT NOT NULL,
+      "opengDt" TEXT,
+      "sucsfbidMthdNm" TEXT,
+      "companyName" TEXT,
+      "companyBizno" TEXT,
+      "bidAmount" TEXT,
+      "sucsfbidAmt" TEXT,
+      "ranking" INTEGER,
+      "resultType" TEXT NOT NULL DEFAULT 'completed',
+      "agency" TEXT,
+      "rawData" TEXT NOT NULL,
+      "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+  console.log("[migrate] BidResult table created/verified");
+
+  // Company 테이블
+  await client.execute(`
+    CREATE TABLE IF NOT EXISTS "Company" (
+      "id" INTEGER PRIMARY KEY AUTOINCREMENT,
+      "bizno" TEXT NOT NULL UNIQUE,
+      "name" TEXT NOT NULL,
+      "totalBids" INTEGER NOT NULL DEFAULT 0,
+      "totalWins" INTEGER NOT NULL DEFAULT 0,
+      "totalAmount" TEXT,
+      "lastBidDate" TEXT,
+      "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+  console.log("[migrate] Company table created/verified");
+
+  // Keyword.userId 컬럼 추가 (기존 DB 호환)
   try {
     await client.execute(`ALTER TABLE "Keyword" ADD COLUMN "userId" INTEGER REFERENCES "User"("id")`);
     console.log("[migrate] Added userId column to Keyword");
@@ -48,12 +145,14 @@ async function main() {
     console.log("[migrate] userId column already exists in Keyword");
   }
 
+  // 인덱스 정리
   try {
     await client.execute(`DROP INDEX IF EXISTS "Keyword_name_key"`);
     await client.execute(`CREATE UNIQUE INDEX IF NOT EXISTS "Keyword_name_userId_key" ON "Keyword"("name", "userId")`);
-    console.log("[migrate] Updated Keyword unique constraint");
+    await client.execute(`CREATE UNIQUE INDEX IF NOT EXISTS "BidResult_bidNtceNo_bidNtceOrd_companyBizno_key" ON "BidResult"("bidNtceNo", "bidNtceOrd", "companyBizno")`);
+    console.log("[migrate] Indexes created/verified");
   } catch (e) {
-    console.log("[migrate] Keyword index update:", e);
+    console.log("[migrate] Index update:", e);
   }
 
   for (const u of users) {

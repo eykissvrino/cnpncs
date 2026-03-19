@@ -2,8 +2,9 @@
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { TrendingUp, Building2, Users, BarChart3, Loader2 } from "lucide-react";
+import { ResponsiveContainer, BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from "recharts";
 import axios from "axios";
 
 interface Agency {
@@ -86,7 +87,7 @@ export default function AnalyticsPage() {
     value,
     trend,
   }: {
-    icon: any;
+    icon: React.ComponentType<{ className?: string }>;
     label: string;
     value: string | number;
     trend?: string;
@@ -106,162 +107,6 @@ export default function AnalyticsPage() {
       </CardContent>
     </Card>
   );
-
-  // 간단한 바 차트 (SVG)
-  const SimpleBarChart = ({
-    data,
-    dataKey,
-  }: {
-    data: Agency[];
-    dataKey: string;
-  }) => {
-    if (!data.length) {
-      return (
-        <div className="h-64 flex items-center justify-center rounded-lg border-2 border-dashed border-muted">
-          <p className="text-muted-foreground">데이터가 없습니다</p>
-        </div>
-      );
-    }
-
-    const maxValue = Math.max(...data.map((d) => d[dataKey as keyof Agency] as number));
-    const chartHeight = 250;
-    const barWidth = 40;
-    const spacing = 10;
-    const svgWidth = data.length * (barWidth + spacing) + 40;
-
-    return (
-      <div className="overflow-x-auto pb-4">
-        <svg width={svgWidth} height={chartHeight + 40} className="mx-auto">
-          {data.map((item, idx) => {
-            const value = item[dataKey as keyof Agency] as number;
-            const height = (value / maxValue) * chartHeight;
-            const x = idx * (barWidth + spacing) + 20;
-            const y = chartHeight - height;
-
-            return (
-              <g key={idx}>
-                <rect x={x} y={y} width={barWidth} height={height} fill="#3b82f6" rx={4} />
-                <text
-                  x={x + barWidth / 2}
-                  y={chartHeight + 15}
-                  textAnchor="middle"
-                  fontSize="10"
-                  fill="#666"
-                >
-                  {item.agencyName.substring(0, 8)}
-                </text>
-                <text x={x + barWidth / 2} y={y - 5} textAnchor="middle" fontSize="10" fill="#333">
-                  {value}
-                </text>
-              </g>
-            );
-          })}
-        </svg>
-      </div>
-    );
-  };
-
-  // 간단한 라인 차트 (SVG)
-  const SimpleLineChart = ({ data }: { data: TrendData[] }) => {
-    if (!data.length) {
-      return (
-        <div className="h-64 flex items-center justify-center rounded-lg border-2 border-dashed border-muted">
-          <p className="text-muted-foreground">데이터가 없습니다</p>
-        </div>
-      );
-    }
-
-    const maxPosts = Math.max(...data.map((d) => d.posts || 1));
-    const maxWins = Math.max(...data.map((d) => d.wins || 1));
-    const chartHeight = 250;
-    const chartWidth = Math.max(800, data.length * 30);
-    const padding = 40;
-
-    const getPointsPath = (values: number[], max: number, color: string) => {
-      const points = values
-        .map((v, idx) => {
-          const x = (idx / (values.length - 1 || 1)) * (chartWidth - padding * 2) + padding;
-          const y = chartHeight - (v / max) * chartHeight + padding;
-          return `${x},${y}`;
-        })
-        .join(" ");
-      return points;
-    };
-
-    return (
-      <div className="overflow-x-auto pb-4">
-        <svg width={chartWidth} height={chartHeight + 80} className="mx-auto">
-          {/* Grid lines */}
-          {[0, 0.25, 0.5, 0.75, 1].map((pos, idx) => (
-            <line
-              key={idx}
-              x1={padding}
-              y1={chartHeight - chartHeight * pos + padding}
-              x2={chartWidth - padding}
-              y2={chartHeight - chartHeight * pos + padding}
-              stroke="#e5e7eb"
-              strokeDasharray="3,3"
-            />
-          ))}
-
-          {/* Posts line */}
-          <polyline
-            points={getPointsPath(
-              data.map((d) => d.posts),
-              maxPosts,
-              "#3b82f6"
-            )}
-            fill="none"
-            stroke="#3b82f6"
-            strokeWidth="2"
-          />
-
-          {/* Wins line */}
-          <polyline
-            points={getPointsPath(
-              data.map((d) => d.wins),
-              maxWins,
-              "#10b981"
-            )}
-            fill="none"
-            stroke="#10b981"
-            strokeWidth="2"
-          />
-
-          {/* X-axis labels */}
-          {data.map((d, idx) => {
-            if (idx % Math.ceil(data.length / 8) === 0) {
-              const x = (idx / (data.length - 1 || 1)) * (chartWidth - padding * 2) + padding;
-              return (
-                <text
-                  key={`label-${idx}`}
-                  x={x}
-                  y={chartHeight + padding + 20}
-                  textAnchor="middle"
-                  fontSize="10"
-                  fill="#666"
-                >
-                  {d.date.substring(5)}
-                </text>
-              );
-            }
-            return null;
-          })}
-
-          {/* Legend */}
-          <rect x={padding} y={padding - 30} width={200} height={25} fill="#f9fafb" rx={4} />
-          <circle cx={padding + 10} cy={padding - 17} r={3} fill="#3b82f6" />
-          <text x={padding + 18} y={padding - 12} fontSize="12" fill="#333">
-            발주건수
-          </text>
-          <circle cx={padding + 100} cy={padding - 17} r={3} fill="#10b981" />
-          <text x={padding + 108} y={padding - 12} fontSize="12" fill="#333">
-            낙찰건수
-          </text>
-        </svg>
-      </div>
-    );
-  };
 
   return (
     <div className="space-y-6">
@@ -339,7 +184,23 @@ export default function AnalyticsPage() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <SimpleLineChart data={trends} />
+              {trends.length === 0 ? (
+                <div className="h-64 flex items-center justify-center rounded-lg border-2 border-dashed border-muted">
+                  <p className="text-muted-foreground">데이터가 없습니다</p>
+                </div>
+              ) : (
+                <ResponsiveContainer width="100%" height={300}>
+                  <LineChart data={trends}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="date" tick={{ fontSize: 12 }} tickFormatter={(v: string) => v.substring(5)} />
+                    <YAxis tick={{ fontSize: 12 }} />
+                    <Tooltip />
+                    <Legend />
+                    <Line type="monotone" dataKey="posts" name="발주건수" stroke="#3b82f6" strokeWidth={2} dot={{ r: 3 }} />
+                    <Line type="monotone" dataKey="wins" name="낙찰건수" stroke="#10b981" strokeWidth={2} dot={{ r: 3 }} />
+                  </LineChart>
+                </ResponsiveContainer>
+              )}
             </CardContent>
           </Card>
 
@@ -352,7 +213,21 @@ export default function AnalyticsPage() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <SimpleBarChart data={agencies.slice(0, 10)} dataKey="postCount" />
+              {agencies.length === 0 ? (
+                <div className="h-64 flex items-center justify-center rounded-lg border-2 border-dashed border-muted">
+                  <p className="text-muted-foreground">데이터가 없습니다</p>
+                </div>
+              ) : (
+                <ResponsiveContainer width="100%" height={350}>
+                  <BarChart data={agencies.slice(0, 10)} layout="vertical" margin={{ left: 80 }}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis type="number" tick={{ fontSize: 12 }} />
+                    <YAxis type="category" dataKey="agencyName" tick={{ fontSize: 11 }} width={120} tickFormatter={(v: string) => v.length > 12 ? v.substring(0, 12) + "…" : v} />
+                    <Tooltip />
+                    <Bar dataKey="postCount" name="발주건수" fill="#3b82f6" radius={[0, 4, 4, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
             </CardContent>
           </Card>
 
@@ -366,54 +241,36 @@ export default function AnalyticsPage() {
             </CardHeader>
             <CardContent>
               <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b">
-                      <th className="text-left py-3 px-4 font-semibold">
-                        순위
-                      </th>
-                      <th className="text-left py-3 px-4 font-semibold">
-                        기업명
-                      </th>
-                      <th className="text-right py-3 px-4 font-semibold">
-                        수주건수
-                      </th>
-                      <th className="text-right py-3 px-4 font-semibold">
-                        수주금액
-                      </th>
-                      <th className="text-left py-3 px-4 font-semibold">
-                        최근수주일
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-16">순위</TableHead>
+                      <TableHead>기업명</TableHead>
+                      <TableHead className="text-right">수주건수</TableHead>
+                      <TableHead className="text-right">수주금액</TableHead>
+                      <TableHead>최근수주일</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
                     {companies && companies.length > 0 ? (
                       companies.slice(0, 10).map((company, index) => (
-                        <tr key={index} className="border-b hover:bg-muted/50">
-                          <td className="py-3 px-4">{index + 1}</td>
-                          <td className="py-3 px-4 font-medium">
-                            {company.companyName || "N/A"}
-                          </td>
-                          <td className="text-right py-3 px-4">
-                            {company.recentWins || 0}
-                          </td>
-                          <td className="text-right py-3 px-4">
-                            ₩{(company.totalWinAmount || 0).toLocaleString()}
-                          </td>
-                          <td className="py-3 px-4 text-muted-foreground">
-                            {company.lastWinDate || "N/A"}
-                          </td>
-                        </tr>
+                        <TableRow key={index}>
+                          <TableCell className="font-medium">{index + 1}</TableCell>
+                          <TableCell className="font-medium">{company.companyName || "N/A"}</TableCell>
+                          <TableCell className="text-right">{company.recentWins || 0}</TableCell>
+                          <TableCell className="text-right">₩{(company.totalWinAmount || 0).toLocaleString()}</TableCell>
+                          <TableCell className="text-muted-foreground">{company.lastWinDate || "N/A"}</TableCell>
+                        </TableRow>
                       ))
                     ) : (
-                      <tr>
-                        <td colSpan={5} className="py-6 text-center text-muted-foreground">
+                      <TableRow>
+                        <TableCell colSpan={5} className="text-center py-6 text-muted-foreground">
                           데이터가 없습니다
-                        </td>
-                      </tr>
+                        </TableCell>
+                      </TableRow>
                     )}
-                  </tbody>
-                </table>
+                  </TableBody>
+                </Table>
               </div>
             </CardContent>
           </Card>

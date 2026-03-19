@@ -60,8 +60,8 @@ export default function AdminPage() {
     try {
       const res = await fetch("/api/admin/users");
       if (!res.ok) throw new Error("조회 실패");
-      const data = (await res.json()) as User[];
-      setUsers(data);
+      const data = (await res.json()) as { users: User[] };
+      setUsers(data.users);
     } catch {
       toast.error("사용자 목록 조회 실패");
     } finally {
@@ -98,10 +98,12 @@ export default function AdminPage() {
   };
 
   const handleResetPassword = async (id: number, name: string) => {
-    if (!confirm(`${name}의 비밀번호를 초기화하시겠습니까?`)) return;
+    if (!confirm(`${name}의 비밀번호를 초기화하시겠습니까? (cnp1234로 초기화됩니다)`)) return;
     try {
-      const res = await fetch(`/api/admin/users/${id}/reset-password`, {
-        method: "POST",
+      const res = await fetch("/api/admin/users", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: id, resetPassword: true, newPassword: "cnp1234" }),
       });
       if (!res.ok) throw new Error("초기화 실패");
       toast.success(`${name}의 비밀번호가 초기화되었습니다`);
@@ -113,12 +115,23 @@ export default function AdminPage() {
 
   const handleToggleActive = async (id: number, active: boolean, name: string) => {
     try {
-      const res = await fetch(`/api/admin/users/${id}/toggle`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ active: !active }),
-      });
-      if (!res.ok) throw new Error("변경 실패");
+      if (active) {
+        // 활성 → 비활성: DELETE 사용
+        const res = await fetch("/api/admin/users", {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ userId: id }),
+        });
+        if (!res.ok) throw new Error("변경 실패");
+      } else {
+        // 비활성 → 활성: PUT 사용
+        const res = await fetch("/api/admin/users", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ userId: id, active: true }),
+        });
+        if (!res.ok) throw new Error("변경 실패");
+      }
       toast.success(`${name}이(가) ${!active ? "활성화" : "비활성화"}되었습니다`);
       await fetchUsers();
     } catch (error) {

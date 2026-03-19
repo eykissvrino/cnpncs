@@ -117,11 +117,12 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: "접근 권한이 없습니다." }, { status: 403 });
     }
 
-    const { userId, name, department, role, resetPassword, newPassword } = (await request.json()) as {
+    const { userId, name, department, role, active, resetPassword, newPassword } = (await request.json()) as {
       userId: number;
       name?: string;
       department?: string;
       role?: string;
+      active?: boolean;
       resetPassword?: boolean;
       newPassword?: string;
     };
@@ -138,10 +139,11 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: "사용자를 찾을 수 없습니다." }, { status: 404 });
     }
 
-    const updateData: any = {};
+    const updateData: Record<string, unknown> = {};
     if (name) updateData.name = name;
     if (department) updateData.department = department;
     if (role) updateData.role = role;
+    if (typeof active === "boolean") updateData.active = active;
     if (resetPassword && newPassword) {
       updateData.password = hashPassword(newPassword);
     }

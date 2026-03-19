@@ -21,7 +21,7 @@ export async function GET(request: NextRequest) {
     const crawlResults = await prisma.crawlResult.findMany({
       where: {
         createdAt: { gte: since },
-        agency: { not: null },
+        agency: { not: "" },
       },
     });
 

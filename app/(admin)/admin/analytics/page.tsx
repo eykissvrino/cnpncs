@@ -2,8 +2,10 @@
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { TrendingUp, Users, Search, Calendar, Loader2 } from "lucide-react";
 import axios from "axios";
+import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from "recharts";
 
 interface DailyStat {
   date: string;
@@ -62,7 +64,7 @@ export default function AdminAnalyticsPage() {
     value,
     color = "blue",
   }: {
-    icon: any;
+    icon: React.ComponentType<{ className?: string }>;
     label: string;
     value: number;
     color?: string;
@@ -91,7 +93,7 @@ export default function AdminAnalyticsPage() {
     );
   };
 
-  // 간단한 라인 차트 (SVG)
+  // Recharts 기반 라인 차트
   const SimpleDailyChart = ({ data: chartData }: { data: DailyStat[] | undefined }) => {
     if (!chartData || chartData.length === 0) {
       return (
@@ -101,107 +103,46 @@ export default function AdminAnalyticsPage() {
       );
     }
 
-    const maxVisits = Math.max(...chartData.map((d) => d.visits || 1));
-    const chartHeight = 250;
-    const chartWidth = Math.max(800, chartData.length * 30);
-    const padding = 40;
-
-    const getPointsPath = (values: number[], max: number) => {
-      const points = values
-        .map((v, idx) => {
-          const x = (idx / (values.length - 1 || 1)) * (chartWidth - padding * 2) + padding;
-          const y = chartHeight - (v / max) * chartHeight + padding;
-          return `${x},${y}`;
-        })
-        .join(" ");
-      return points;
-    };
+    // 차트 데이터 포맷팅
+    const formattedData = chartData.map((d) => ({
+      date: d.date,
+      displayDate: d.date.substring(5), // MM-DD 형식
+      총접속: d.visits,
+      사용자수: d.uniqueUsers,
+      검색수: d.searches,
+    }));
 
     return (
-      <div className="overflow-x-auto pb-4">
-        <svg width={chartWidth} height={chartHeight + 80} className="mx-auto">
-          {/* Grid lines */}
-          {[0, 0.25, 0.5, 0.75, 1].map((pos, idx) => (
-            <line
-              key={idx}
-              x1={padding}
-              y1={chartHeight - chartHeight * pos + padding}
-              x2={chartWidth - padding}
-              y2={chartHeight - chartHeight * pos + padding}
-              stroke="#e5e7eb"
-              strokeDasharray="3,3"
-            />
-          ))}
-
-          {/* Visits line */}
-          <polyline
-            points={getPointsPath(
-              chartData.map((d) => d.visits),
-              maxVisits
-            )}
-            fill="none"
+      <ResponsiveContainer width="100%" height={300}>
+        <LineChart data={formattedData} margin={{ top: 5, right: 30, left: 0, bottom: 5 }}>
+          <CartesianGrid strokeDasharray="3 3" />
+          <XAxis dataKey="displayDate" />
+          <YAxis />
+          <Tooltip />
+          <Legend />
+          <Line
+            type="monotone"
+            dataKey="총접속"
             stroke="#3b82f6"
-            strokeWidth="2"
+            strokeWidth={2}
+            dot={false}
           />
-
-          {/* Unique Users line */}
-          <polyline
-            points={getPointsPath(
-              chartData.map((d) => d.uniqueUsers),
-              maxVisits
-            )}
-            fill="none"
+          <Line
+            type="monotone"
+            dataKey="사용자수"
             stroke="#10b981"
-            strokeWidth="2"
+            strokeWidth={2}
+            dot={false}
           />
-
-          {/* Searches line */}
-          <polyline
-            points={getPointsPath(
-              chartData.map((d) => d.searches),
-              maxVisits
-            )}
-            fill="none"
+          <Line
+            type="monotone"
+            dataKey="검색수"
             stroke="#f59e0b"
-            strokeWidth="2"
+            strokeWidth={2}
+            dot={false}
           />
-
-          {/* X-axis labels */}
-          {chartData.map((d, idx) => {
-            if (idx % Math.ceil(chartData.length / 8) === 0) {
-              const x = (idx / (chartData.length - 1 || 1)) * (chartWidth - padding * 2) + padding;
-              return (
-                <text
-                  key={`label-${idx}`}
-                  x={x}
-                  y={chartHeight + padding + 20}
-                  textAnchor="middle"
-                  fontSize="10"
-                  fill="#666"
-                >
-                  {d.date.substring(5)}
-                </text>
-              );
-            }
-            return null;
-          })}
-
-          {/* Legend */}
-          <rect x={padding} y={padding - 30} width={300} height={25} fill="#f9fafb" rx={4} />
-          <circle cx={padding + 10} cy={padding - 17} r={3} fill="#3b82f6" />
-          <text x={padding + 18} y={padding - 12} fontSize="12" fill="#333">
-            총 접속
-          </text>
-          <circle cx={padding + 100} cy={padding - 17} r={3} fill="#10b981" />
-          <text x={padding + 108} y={padding - 12} fontSize="12" fill="#333">
-            사용자수
-          </text>
-          <circle cx={padding + 200} cy={padding - 17} r={3} fill="#f59e0b" />
-          <text x={padding + 208} y={padding - 12} fontSize="12" fill="#333">
-            검색수
-          </text>
-        </svg>
-      </div>
+        </LineChart>
+      </ResponsiveContainer>
     );
   };
 
@@ -268,56 +209,46 @@ export default function AdminAnalyticsPage() {
             </CardHeader>
             <CardContent>
               <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b">
-                      <th className="text-left py-3 px-4 font-semibold">
-                        순위
-                      </th>
-                      <th className="text-left py-3 px-4 font-semibold">
-                        이름/이메일
-                      </th>
-                      <th className="text-left py-3 px-4 font-semibold">
-                        부서
-                      </th>
-                      <th className="text-left py-3 px-4 font-semibold">
-                        최근 접속
-                      </th>
-                      <th className="text-right py-3 px-4 font-semibold">
-                        총 접속횟수
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="text-left">순위</TableHead>
+                      <TableHead className="text-left">이름/아이디</TableHead>
+                      <TableHead className="text-left">부서</TableHead>
+                      <TableHead className="text-left">최근 접속</TableHead>
+                      <TableHead className="text-right">총 접속횟수</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
                     {data.userStats && data.userStats.length > 0 ? (
                       data.userStats.map((user, index) => (
-                        <tr key={index} className="border-b hover:bg-muted/50">
-                          <td className="py-3 px-4">
+                        <TableRow key={index}>
+                          <TableCell>
                             <Badge variant="outline">{index + 1}</Badge>
-                          </td>
-                          <td className="py-3 px-4 font-medium">
+                          </TableCell>
+                          <TableCell className="font-medium">
                             {user.email}
-                          </td>
-                          <td className="py-3 px-4 text-muted-foreground">
+                          </TableCell>
+                          <TableCell className="text-muted-foreground">
                             {user.department}
-                          </td>
-                          <td className="py-3 px-4 text-sm">
+                          </TableCell>
+                          <TableCell className="text-sm">
                             {user.lastVisit}
-                          </td>
-                          <td className="text-right py-3 px-4 font-semibold">
+                          </TableCell>
+                          <TableCell className="text-right font-semibold">
                             {user.totalVisits}
-                          </td>
-                        </tr>
+                          </TableCell>
+                        </TableRow>
                       ))
                     ) : (
-                      <tr>
-                        <td colSpan={5} className="py-6 text-center text-muted-foreground">
+                      <TableRow>
+                        <TableCell colSpan={5} className="py-6 text-center text-muted-foreground">
                           데이터가 없습니다
-                        </td>
-                      </tr>
+                        </TableCell>
+                      </TableRow>
                     )}
-                  </tbody>
-                </table>
+                  </TableBody>
+                </Table>
               </div>
             </CardContent>
           </Card>
