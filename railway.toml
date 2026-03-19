@@ -1,6 +1,6 @@
 [build]
 builder = "NIXPACKS"
-buildCommand = "npm install && npx prisma generate && npm run build"
+buildCommand = "DATABASE_URL=file:./dev.db npx prisma generate && npx next build"
 
 [deploy]
 startCommand = "mkdir -p /data && npx prisma db push --accept-data-loss && node prisma/migrate.mjs && exec node_modules/.bin/next start"
