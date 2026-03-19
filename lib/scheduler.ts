@@ -1,6 +1,9 @@
+import cron, { type ScheduledTask } from "node-cron";
 import { prisma } from "./db";
 import { crawlAllBids, crawlAllOrderPlans, crawlAllPreSpecs, crawlAllBidResults } from "./narajan-api";
 import type { UnifiedResult } from "@/types/narajan";
+
+let schedulerTask: ScheduledTask | null = null;
 
 // 전체 크롤링: 최근 N일치 데이터를 모두 가져와 DB에 저장
 export async function runFullCrawl(daysBack = 7): Promise<{ saved: number; errors: string[] }> {
@@ -82,8 +85,7 @@ async function saveBidResultsAndUpdateCompanies(items: UnifiedResult[]): Promise
 
       if (!bidNtceNo || !companyBizno) continue;
 
-      // BidResult 저장
-      const bidResult = await prisma.bidResult.upsert({
+      await prisma.bidResult.upsert({
         where: {
           bidNtceNo_bidNtceOrd_companyBizno: {
             bidNtceNo,
@@ -148,7 +150,6 @@ export async function runKeywordNotify(): Promise<{ newCount: number; errors: st
 
   for (const kw of keywords) {
     try {
-      // DB에서 키워드 매칭 (미알림 항목)
       const matched = await prisma.crawlResult.findMany({
         where: {
           notified: false,
@@ -157,12 +158,11 @@ export async function runKeywordNotify(): Promise<{ newCount: number; errors: st
             { agency: { contains: kw.name } },
           ],
         },
-        take: 50,
+        take: 200,
       });
 
       if (matched.length === 0) continue;
 
-      // 키워드와 연결 & 알림 플래그 설정
       for (const item of matched) {
         try {
           await prisma.crawlResult.update({
@@ -180,15 +180,8 @@ export async function runKeywordNotify(): Promise<{ newCount: number; errors: st
   return { newCount, errors };
 }
 
-// 통합 크롤링 실행 (전체 수집 + 키워드 알림)
-// 첫 크롤링(DB 비어있을 때)은 60일, 이후 정기 크롤링은 14일
-export async function runCrawl(daysBack?: number): Promise<{ newCount: number; errors: string[] }> {
-  // daysBack이 지정되지 않으면 DB 상태에 따라 자동 결정
-  if (!daysBack) {
-    const count = await prisma.crawlResult.count();
-    daysBack = count < 100 ? 30 : 14;
-    console.log(`[crawler] DB ${count < 100 ? `${count}건 부족 → 초기 30일` : `${count}건 존재 → 최근 14일`} 크롤링`);
-  }
+// 통합 크롤링 실행 (전체 수집 + 키워드 매칭)
+export async function runCrawl(daysBack = 30): Promise<{ newCount: number; errors: string[] }> {
   const crawlResult = await runFullCrawl(daysBack);
   const notifyResult = await runKeywordNotify();
   return {
@@ -197,10 +190,45 @@ export async function runCrawl(daysBack?: number): Promise<{ newCount: number; e
   };
 }
 
+// node-cron 스케줄러: 2시간마다 자동 크롤링
 export function startScheduler(): void {
-  console.log("[scheduler] 스케줄러 준비 완료 (수동 호출용)");
+  if (schedulerTask) {
+    schedulerTask.stop();
+  }
+
+  const schedule = process.env.CRON_SCHEDULE || "0 */2 * * *";
+
+  if (!cron.validate(schedule)) {
+    console.error(`[scheduler] 잘못된 cron 스케줄: ${schedule}`);
+    return;
+  }
+
+  schedulerTask = cron.schedule(schedule, async () => {
+    console.log(`[scheduler] 자동 크롤링 시작: ${new Date().toISOString()}`);
+    const result = await runCrawl(7);
+    console.log(`[scheduler] 완료: 신규 ${result.newCount}건, 오류 ${result.errors.length}건`);
+    if (result.errors.length > 0) {
+      console.error("[scheduler] 오류:", result.errors);
+    }
+  });
+
+  // 서버 시작 시 초기 크롤링 (30초 후 실행 — 서버 완전 준비 대기)
+  setTimeout(async () => {
+    const count = await prisma.crawlResult.count();
+    if (count < 100) {
+      console.log("[scheduler] 초기 데이터 부족 — 30일치 크롤링 시작");
+      const result = await runCrawl(30);
+      console.log(`[scheduler] 초기 크롤링 완료: ${result.newCount}건`);
+    }
+  }, 30_000);
+
+  console.log(`[scheduler] 스케줄러 등록됨: ${schedule}`);
 }
 
 export function stopScheduler(): void {
+  if (schedulerTask) {
+    schedulerTask.stop();
+    schedulerTask = null;
+  }
   console.log("[scheduler] 스케줄러 중지됨");
 }
