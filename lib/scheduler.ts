@@ -181,13 +181,13 @@ export async function runKeywordNotify(): Promise<{ newCount: number; errors: st
 }
 
 // 통합 크롤링 실행 (전체 수집 + 키워드 알림)
-// 첫 크롤링(DB 비어있을 때)은 30일, 이후 정기 크롤링은 7일
+// 첫 크롤링(DB 비어있을 때)은 60일, 이후 정기 크롤링은 14일
 export async function runCrawl(daysBack?: number): Promise<{ newCount: number; errors: string[] }> {
   // daysBack이 지정되지 않으면 DB 상태에 따라 자동 결정
   if (!daysBack) {
     const count = await prisma.crawlResult.count();
-    daysBack = count === 0 ? 30 : 7;
-    console.log(`[crawler] DB ${count === 0 ? "비어있음 → 초기 30일" : `${count}건 존재 → 최근 7일`} 크롤링`);
+    daysBack = count < 100 ? 60 : 14;
+    console.log(`[crawler] DB ${count < 100 ? `${count}건 부족 → 초기 60일` : `${count}건 존재 → 최근 14일`} 크롤링`);
   }
   const crawlResult = await runFullCrawl(daysBack);
   const notifyResult = await runKeywordNotify();
