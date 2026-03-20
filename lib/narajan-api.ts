@@ -13,6 +13,92 @@ const BID_BASE_URL = "https://apis.data.go.kr/1230000/ad";
 // 발주계획/사전규격: /ao/ 경로
 const NARAJAN_BASE_URL = "https://apis.data.go.kr/1230000/ao";
 
+const parsedMaxConcurrentCalls = Number(process.env.NARAJAN_MAX_CONCURRENT_CALLS ?? "1");
+const MAX_CONCURRENT_EXTERNAL_CALLS =
+  Number.isFinite(parsedMaxConcurrentCalls) && parsedMaxConcurrentCalls >= 1
+    ? Math.floor(parsedMaxConcurrentCalls)
+    : 1;
+const MIN_REQUEST_GAP_MS = Number(process.env.NARAJAN_MIN_REQUEST_GAP_MS ?? "300");
+
+let activeExternalCalls = 0;
+let lastExternalCallAt = 0;
+const externalCallQueue: Array<() => void> = [];
+let requestStartChain: Promise<void> = Promise.resolve();
+
+// ── 일일 API 호출 카운터 ──
+const DAILY_CALL_LIMIT = Number(process.env.NARAJAN_DAILY_LIMIT ?? "800");
+let dailyCallCount = 0;
+let dailyCallDate = new Date().toDateString();
+
+function checkAndIncrementDailyCounter(): boolean {
+  const today = new Date().toDateString();
+  if (today !== dailyCallDate) {
+    dailyCallDate = today;
+    dailyCallCount = 0;
+  }
+  if (dailyCallCount >= DAILY_CALL_LIMIT) {
+    console.warn(`[API] 일일 호출 한도 도달 (${dailyCallCount}/${DAILY_CALL_LIMIT}) — 호출 차단`);
+    return false;
+  }
+  dailyCallCount++;
+  return true;
+}
+
+export function getApiCallStats() {
+  return { dailyCallCount, dailyCallLimit: DAILY_CALL_LIMIT, date: dailyCallDate };
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function withExternalCallSlot<T>(job: () => Promise<T>): Promise<T> {
+  if (activeExternalCalls >= MAX_CONCURRENT_EXTERNAL_CALLS) {
+    await new Promise<void>((resolve) => {
+      externalCallQueue.push(resolve);
+    });
+  }
+
+  activeExternalCalls += 1;
+  try {
+    const reserveRequestStart = requestStartChain.then(async () => {
+      const now = Date.now();
+      const waitMs = Math.max(0, lastExternalCallAt + MIN_REQUEST_GAP_MS - now);
+      if (waitMs > 0) {
+        await sleep(waitMs);
+      }
+      lastExternalCallAt = Date.now();
+    });
+
+    requestStartChain = reserveRequestStart.catch(() => undefined);
+    await reserveRequestStart;
+
+    return await job();
+  } finally {
+    activeExternalCalls -= 1;
+    const next = externalCallQueue.shift();
+    if (next) {
+      next();
+    }
+  }
+}
+
+function parseRetryAfterMs(value: string | undefined): number | null {
+  if (!value) return null;
+
+  const seconds = Number(value);
+  if (!Number.isNaN(seconds) && seconds >= 0) {
+    return Math.ceil(seconds * 1000);
+  }
+
+  const retryDate = Date.parse(value);
+  if (!Number.isNaN(retryDate)) {
+    return Math.max(0, retryDate - Date.now());
+  }
+
+  return null;
+}
+
 function getApiKey(): string {
   const key = process.env.NARAJAN_API_KEY;
   if (!key || key === "your_api_key_here") {
@@ -59,23 +145,37 @@ function getDateRange(daysBack = 30): { inqryBgnDt: string; inqryEndDt: string }
 async function fetchWithRetry<T>(
   url: string,
   params: Record<string, string>,
-  retries = 2
+  retries = 3,
+  attempt = 1
 ): Promise<T> {
+  if (!checkAndIncrementDailyCounter()) {
+    throw new Error(`일일 API 호출 한도 초과 (${DAILY_CALL_LIMIT}회). 내일 자동 초기화됩니다.`);
+  }
   try {
-    const response = await axios.get<T>(url, { params, timeout: 20000 });
+    const response = await withExternalCallSlot(() =>
+      axios.get<T>(url, { params, timeout: 20000 })
+    );
     return response.data;
   } catch (error) {
     // 429 Rate Limit: 더 오래 대기 후 재시도
     if (axios.isAxiosError(error) && error.response?.status === 429) {
       if (retries > 0) {
-        console.log(`[API] 429 Rate Limit — ${3 * (3 - retries)}초 대기 후 재시도 (${retries}회 남음)`);
-        await new Promise((r) => setTimeout(r, 3000 * (3 - retries)));
-        return fetchWithRetry<T>(url, params, retries - 1);
+        const retryAfter = parseRetryAfterMs(error.response.headers?.["retry-after"] as string | undefined);
+        const exponentialBackoff = Math.min(12000, 1500 * 2 ** (attempt - 1));
+        const jitter = Math.floor(Math.random() * 400);
+        const waitMs = Math.max(retryAfter ?? 0, exponentialBackoff + jitter);
+
+        console.log(
+          `[API] 429 Rate Limit — ${Math.ceil(waitMs / 1000)}초 대기 후 재시도 (${retries}회 남음)`
+        );
+        await sleep(waitMs);
+        return fetchWithRetry<T>(url, params, retries - 1, attempt + 1);
       }
     }
     if (retries > 0) {
-      await new Promise((r) => setTimeout(r, 1500));
-      return fetchWithRetry<T>(url, params, retries - 1);
+      const waitMs = Math.min(8000, 1000 * 2 ** (attempt - 1));
+      await sleep(waitMs);
+      return fetchWithRetry<T>(url, params, retries - 1, attempt + 1);
     }
     throw error;
   }
@@ -366,14 +466,30 @@ export async function crawlAllBidResults(daysBack = 7): Promise<UnifiedResult[]>
         }
       );
       const totalCount = first?.response?.body?.totalCount ?? 0;
-      const totalPages = Math.min(Math.ceil(totalCount / 100), 50);
+      const totalPages = Math.min(Math.ceil(totalCount / 100), 10);
 
       if (totalPages === 0) continue;
 
-      const pages = Array.from({ length: totalPages }, (_, i) => i + 1);
+      const firstItems = parseItems<BidResultItem>(first?.response?.body?.items);
+      for (const item of firstItems) {
+        allItems.push({
+          id: `bidresult-${item.bidNtceNo}-${item.bidNtceOrd}-${item.prcbdrBizno}`,
+          type: "bidresult",
+          typeLabel: "개찰결과",
+          title: item.bidNtceNm || "-",
+          agency: item.ntceInsttNm || "-",
+          budget: formatBudget(item.sucsfbidAmt || item.bidprcAmt),
+          postDate: item.rgstDt?.substring(0, 10) || "-",
+          deadline: "-",
+          url: "",
+          rawData: JSON.stringify(item),
+        });
+      }
 
-      for (let i = 0; i < pages.length; i += 10) {
-        const batch = pages.slice(i, i + 10);
+      const pages = Array.from({ length: totalPages - 1 }, (_, i) => i + 2);
+
+      for (let i = 0; i < pages.length; i += 5) {
+        const batch = pages.slice(i, i + 5);
         const results = await Promise.allSettled(
           batch.map((p) =>
             fetchWithRetry<ApiResponse<BidResultItem>>(
@@ -408,13 +524,13 @@ export async function crawlAllBidResults(daysBack = 7): Promise<UnifiedResult[]>
             });
           }
         }
-        if (i + 10 < pages.length) await new Promise((r) => setTimeout(r, 800));
+        if (i + 5 < pages.length) await sleep(1200);
       }
     } catch {
       // 청크 실패는 무시하고 다음 청크 진행
     }
 
-    if (offset + CHUNK_DAYS < daysBack) await new Promise((r) => setTimeout(r, 1500));
+    if (offset + CHUNK_DAYS < daysBack) await sleep(2000);
   }
 
   return allItems;
@@ -452,12 +568,28 @@ export async function crawlAllBids(daysBack = 7): Promise<UnifiedResult[]> {
         { serviceKey: apiKey, type: "json", numOfRows: "100", pageNo: "1", inqryDiv: "1", inqryBgnDt, inqryEndDt }
       );
       const totalCount = first?.response?.body?.totalCount ?? 0;
-      const totalPages = Math.min(Math.ceil(totalCount / 100), 50);
+      const totalPages = Math.min(Math.ceil(totalCount / 100), 10);
 
-      const pages = Array.from({ length: totalPages }, (_, i) => i + 1);
+      const firstItems = parseItems<BidAnnouncementItem>(first?.response?.body?.items);
+      for (const item of firstItems) {
+        allItems.push({
+          id: `bid-${item.bidNtceNo}-${item.bidNtceOrd}`,
+          type: "bid",
+          typeLabel: "입찰공고",
+          title: item.bidNtceNm || "-",
+          agency: item.ntceInsttNm || "-",
+          budget: formatBudget(item.asignBdgtAmt),
+          postDate: item.bidNtceDt?.substring(0, 10) || "-",
+          deadline: item.bidClseDt?.substring(0, 10) || "-",
+          url: item.bidNtceDtlUrl || item.ntceSpecDocUrl1 || item.ntceSpecDocUrl || "",
+          rawData: JSON.stringify(item),
+        });
+      }
 
-      for (let i = 0; i < pages.length; i += 10) {
-        const batch = pages.slice(i, i + 10);
+      const pages = Array.from({ length: totalPages - 1 }, (_, i) => i + 2);
+
+      for (let i = 0; i < pages.length; i += 5) {
+        const batch = pages.slice(i, i + 5);
         const results = await Promise.allSettled(
           batch.map((p) =>
             fetchWithRetry<ApiResponse<BidAnnouncementItem>>(
@@ -484,14 +616,14 @@ export async function crawlAllBids(daysBack = 7): Promise<UnifiedResult[]> {
             });
           }
         }
-        if (i + 10 < pages.length) await new Promise((r) => setTimeout(r, 800));
+        if (i + 5 < pages.length) await sleep(1200);
       }
     } catch {
       // 청크 실패는 무시하고 다음 청크 진행
     }
 
     // 청크 간 300ms 대기 (rate limit 방지)
-    if (offset + CHUNK_DAYS < daysBack) await new Promise((r) => setTimeout(r, 1500));
+    if (offset + CHUNK_DAYS < daysBack) await sleep(2000);
   }
 
   return allItems;
@@ -520,7 +652,7 @@ export async function crawlAllPreSpecs(): Promise<UnifiedResult[]> {
       const totalCount = first?.response?.body?.totalCount ?? 0;
       console.log(`[사전규격 크롤링] ${endpoint}: totalCount=${totalCount}`);
       if (totalCount === 0) continue;
-      const totalPages = Math.min(Math.ceil(totalCount / 100), 20);
+      const totalPages = Math.min(Math.ceil(totalCount / 100), 10);
 
       // 첫 페이지 데이터 먼저 처리
       const firstItems = parseItems<PreSpecItem>(first?.response?.body?.items);
@@ -530,8 +662,8 @@ export async function crawlAllPreSpecs(): Promise<UnifiedResult[]> {
 
       // 나머지 페이지
       const pages = Array.from({ length: totalPages - 1 }, (_, i) => i + 2);
-      for (let i = 0; i < pages.length; i += 10) {
-        const batch = pages.slice(i, i + 10);
+      for (let i = 0; i < pages.length; i += 5) {
+        const batch = pages.slice(i, i + 5);
         const results = await Promise.allSettled(
           batch.map((p) =>
             fetchWithRetry<ApiResponse<PreSpecItem>>(
@@ -547,13 +679,13 @@ export async function crawlAllPreSpecs(): Promise<UnifiedResult[]> {
             allItems.push(mapPreSpecItem(item));
           }
         }
-        if (i + 10 < pages.length) await new Promise((r) => setTimeout(r, 800));
+        if (i + 5 < pages.length) await sleep(1200);
       }
     } catch (error) {
       console.error(`[사전규격 크롤링 실패] ${endpoint}:`, (error as Error)?.message);
     }
     // 엔드포인트 간 300ms 대기
-    await new Promise((r) => setTimeout(r, 1500));
+    await sleep(2000);
   }
   console.log(`[사전규격 크롤링 완료] 총 ${allItems.length}건`);
   return allItems;
@@ -567,13 +699,32 @@ export async function crawlAllOrderPlans(): Promise<UnifiedResult[]> {
       { serviceKey: apiKey, type: "json", numOfRows: "100", pageNo: "1" }
     );
     const totalCount = first?.response?.body?.totalCount ?? 0;
-    const totalPages = Math.min(Math.ceil(totalCount / 100), 20);
+    const totalPages = Math.min(Math.ceil(totalCount / 100), 10);
 
     const allItems: UnifiedResult[] = [];
-    const pages = Array.from({ length: totalPages }, (_, i) => i + 1);
+    const firstItems = parseItems<OrderPlanItem>(first?.response?.body?.items);
+    for (const item of firstItems) {
+      allItems.push({
+        id: `order-${item.orderPlanUntyNo || item.orderPlanSno || Math.random()}`,
+        type: "order",
+        typeLabel: "발주계획",
+        title: item.bizNm || item.prdctClsfcNoNm || "-",
+        agency: item.orderInsttNm || item.totlmngInsttNm || "-",
+        budget: formatBudget(item.sumOrderAmt || item.orderContrctAmt),
+        postDate: item.nticeDt?.substring(0, 10) ||
+          (item.orderYear && item.orderMnth ? `${item.orderYear}-${item.orderMnth.padStart(2, "0")}` : "-"),
+        deadline: "-",
+        url: item.bizNm
+          ? `https://www.g2b.go.kr/search/search.jsp?query=${encodeURIComponent(item.bizNm)}`
+          : "",
+        rawData: JSON.stringify(item),
+      });
+    }
 
-    for (let i = 0; i < pages.length; i += 10) {
-      const batch = pages.slice(i, i + 10);
+    const pages = Array.from({ length: totalPages - 1 }, (_, i) => i + 2);
+
+    for (let i = 0; i < pages.length; i += 5) {
+      const batch = pages.slice(i, i + 5);
       const results = await Promise.allSettled(
         batch.map((p) =>
           fetchWithRetry<ApiResponse<OrderPlanItem>>(
@@ -603,7 +754,7 @@ export async function crawlAllOrderPlans(): Promise<UnifiedResult[]> {
           });
         }
       }
-      if (i + 10 < pages.length) await new Promise((r) => setTimeout(r, 800));
+      if (i + 5 < pages.length) await sleep(1200);
     }
     return allItems;
   } catch {

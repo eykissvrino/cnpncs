@@ -51,7 +51,9 @@ export async function GET(request: NextRequest) {
 
     const dbTotal = dbMapped.length;
 
-    if (dbTotal >= 10) {
+    // DB에 결과가 있으면 DB 결과만 반환 (외부 API 호출 절약)
+    // 외부 API는 크론 크롤링에서만 호출하도록 제한
+    if (dbTotal > 0) {
       return NextResponse.json({
         bid: dbBid,
         prespec: dbPrespec,
@@ -62,6 +64,7 @@ export async function GET(request: NextRequest) {
       });
     }
 
+    // DB에 결과가 전혀 없을 때만 외부 API 호출
     const [bidResult, prespecResult, orderResult, bidResultResult] = await Promise.allSettled([
       searchBidAnnouncements(keyword, page),
       searchPreSpecs(keyword, page),
@@ -74,15 +77,7 @@ export async function GET(request: NextRequest) {
     const apiOrder = orderResult.status === "fulfilled" ? orderResult.value : [];
     const apiBidResult = bidResultResult.status === "fulfilled" ? bidResultResult.value : [];
 
-    const existingIds = new Set(dbMapped.map((r) => r.id));
-    const newFromApi = [...apiBid, ...apiPrespec, ...apiOrder, ...apiBidResult].filter(
-      (r) => !existingIds.has(r.id)
-    );
-
-    const bid = [...dbBid, ...apiBid.filter((r) => !existingIds.has(r.id))];
-    const prespec = [...dbPrespec, ...apiPrespec.filter((r) => !existingIds.has(r.id))];
-    const order = [...dbOrder, ...apiOrder.filter((r) => !existingIds.has(r.id))];
-    const bidresult = [...dbBidResult, ...apiBidResult.filter((r) => !existingIds.has(r.id))];
+    const newFromApi = [...apiBid, ...apiPrespec, ...apiOrder, ...apiBidResult];
 
     for (const item of newFromApi) {
       try {
@@ -109,11 +104,11 @@ export async function GET(request: NextRequest) {
     }
 
     return NextResponse.json({
-      bid,
-      prespec,
-      order,
-      bidresult,
-      total: bid.length + prespec.length + order.length + bidresult.length,
+      bid: apiBid,
+      prespec: apiPrespec,
+      order: apiOrder,
+      bidresult: apiBidResult,
+      total: newFromApi.length,
       source: "api",
     });
   } catch (error) {

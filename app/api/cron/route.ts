@@ -45,7 +45,7 @@ export async function GET(request: NextRequest) {
   console.log("[cron] 백그라운드 크롤링 시작:", new Date().toISOString());
 
   // 비동기 실행 — await 하지 않고 즉시 응답
-  runCrawl()
+  runCrawl(3)
     .then((result) => {
       console.log("[cron] 크롤링 완료:", result);
       crawlStatus = {

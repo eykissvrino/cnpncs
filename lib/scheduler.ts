@@ -4,33 +4,51 @@ import { crawlAllBids, crawlAllOrderPlans, crawlAllPreSpecs, crawlAllBidResults 
 import type { UnifiedResult } from "@/types/narajan";
 
 let schedulerTask: ScheduledTask | null = null;
+let fullCrawlRunning = false;
 
 // 전체 크롤링: 최근 N일치 데이터를 모두 가져와 DB에 저장
 export async function runFullCrawl(daysBack = 7): Promise<{ saved: number; errors: string[] }> {
+  if (fullCrawlRunning) {
+    return { saved: 0, errors: ["이미 전체 크롤링이 진행 중입니다."] };
+  }
+
+  fullCrawlRunning = true;
   const errors: string[] = [];
   let saved = 0;
 
   console.log(`[crawler] 전체 크롤링 시작 (최근 ${daysBack}일)`);
 
   try {
-    const [bids, orders, preSpecs, bidResults] = await Promise.allSettled([
-      crawlAllBids(daysBack),
-      crawlAllOrderPlans(),
-      crawlAllPreSpecs(),
-      crawlAllBidResults(daysBack),
-    ]);
+    const allItems: UnifiedResult[] = [];
+    let bidResultsItems: UnifiedResult[] = [];
 
-    const allItems = [
-      ...(bids.status === "fulfilled" ? bids.value : []),
-      ...(orders.status === "fulfilled" ? orders.value : []),
-      ...(preSpecs.status === "fulfilled" ? preSpecs.value : []),
-      ...(bidResults.status === "fulfilled" ? bidResults.value : []),
-    ];
+    try {
+      const bids = await crawlAllBids(daysBack);
+      allItems.push(...bids);
+    } catch (error) {
+      errors.push("입찰공고 크롤링 실패: " + String(error));
+    }
 
-    if (bids.status === "rejected") errors.push("입찰공고 크롤링 실패: " + String(bids.reason));
-    if (orders.status === "rejected") errors.push("발주계획 크롤링 실패: " + String(orders.reason));
-    if (preSpecs.status === "rejected") errors.push("사전규격 크롤링 실패: " + String(preSpecs.reason));
-    if (bidResults.status === "rejected") errors.push("낙찰결과 크롤링 실패: " + String(bidResults.reason));
+    try {
+      const orders = await crawlAllOrderPlans();
+      allItems.push(...orders);
+    } catch (error) {
+      errors.push("발주계획 크롤링 실패: " + String(error));
+    }
+
+    try {
+      const preSpecs = await crawlAllPreSpecs();
+      allItems.push(...preSpecs);
+    } catch (error) {
+      errors.push("사전규격 크롤링 실패: " + String(error));
+    }
+
+    try {
+      bidResultsItems = await crawlAllBidResults(daysBack);
+      allItems.push(...bidResultsItems);
+    } catch (error) {
+      errors.push("낙찰결과 크롤링 실패: " + String(error));
+    }
 
     console.log(`[crawler] 수집 완료: ${allItems.length}건`);
 
@@ -62,13 +80,15 @@ export async function runFullCrawl(daysBack = 7): Promise<{ saved: number; error
     }
 
     // BidResult 모델에 별도 저장 및 Company 업데이트
-    if (bidResults.status === "fulfilled") {
-      await saveBidResultsAndUpdateCompanies(bidResults.value);
+    if (bidResultsItems.length > 0) {
+      await saveBidResultsAndUpdateCompanies(bidResultsItems);
     }
 
     console.log(`[crawler] DB 저장: ${saved}건 신규`);
   } catch (e) {
     errors.push("크롤링 오류: " + String(e));
+  } finally {
+    fullCrawlRunning = false;
   }
 
   return { saved, errors };
@@ -190,13 +210,13 @@ export async function runCrawl(daysBack = 30): Promise<{ newCount: number; error
   };
 }
 
-// node-cron 스케줄러: 2시간마다 자동 크롤링
+// node-cron 스케줄러: 6시간마다 자동 크롤링
 export function startScheduler(): void {
   if (schedulerTask) {
     schedulerTask.stop();
   }
 
-  const schedule = process.env.CRON_SCHEDULE || "0 */2 * * *";
+  const schedule = process.env.CRON_SCHEDULE || "0 */6 * * *";
 
   if (!cron.validate(schedule)) {
     console.error(`[scheduler] 잘못된 cron 스케줄: ${schedule}`);
@@ -205,7 +225,7 @@ export function startScheduler(): void {
 
   schedulerTask = cron.schedule(schedule, async () => {
     console.log(`[scheduler] 자동 크롤링 시작: ${new Date().toISOString()}`);
-    const result = await runCrawl(7);
+    const result = await runCrawl(3);
     console.log(`[scheduler] 완료: 신규 ${result.newCount}건, 오류 ${result.errors.length}건`);
     if (result.errors.length > 0) {
       console.error("[scheduler] 오류:", result.errors);
@@ -216,8 +236,8 @@ export function startScheduler(): void {
   setTimeout(async () => {
     const count = await prisma.crawlResult.count();
     if (count < 100) {
-      console.log("[scheduler] 초기 데이터 부족 — 30일치 크롤링 시작");
-      const result = await runCrawl(30);
+      console.log("[scheduler] 초기 데이터 부족 — 7일치 크롤링 시작");
+      const result = await runCrawl(7);
       console.log(`[scheduler] 초기 크롤링 완료: ${result.newCount}건`);
     }
   }, 30_000);

@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const AUTH_SECRET = process.env.AUTH_SECRET || "narajan-monitor-default-secret";
+const EFFECTIVE_SECRET = process.env.AUTH_SECRET;
+if (!EFFECTIVE_SECRET) {
+  console.error("[SECURITY] AUTH_SECRET 환경변수가 설정되지 않았습니다! 반드시 설정해주세요.");
+}
 
 async function sha256Hex(input: string): Promise<string> {
   const encoder = new TextEncoder();
@@ -18,7 +21,7 @@ async function validateToken(token: string): Promise<boolean> {
   const role = parts[2];
   const hash = parts.slice(3).join(":");
   if (isNaN(userId) || !username || !role) return false;
-  const expectedHash = await sha256Hex(`${userId}:${username}:${role}:${AUTH_SECRET}`);
+  const expectedHash = await sha256Hex(`${userId}:${username}:${role}:${EFFECTIVE_SECRET}`);
   return hash === expectedHash;
 }
 

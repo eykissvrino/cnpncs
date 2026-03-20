@@ -1,7 +1,10 @@
 import { createHash } from "crypto";
 import { prisma } from "@/lib/db";
 
-const AUTH_SECRET = process.env.AUTH_SECRET || "narajan-monitor-default-secret";
+const AUTH_SECRET = process.env.AUTH_SECRET;
+if (!AUTH_SECRET) {
+  console.error("[SECURITY] AUTH_SECRET 환경변수가 설정되지 않았습니다! 반드시 설정해주세요.");
+}
 
 export function hashPassword(password: string): string {
   return createHash("sha256").update(password).digest("hex");
