@@ -32,6 +32,7 @@ export async function middleware(request: NextRequest) {
   if (
     pathname === "/login" ||
     pathname.startsWith("/api/auth") ||
+    pathname === "/api/brief" || // 라우트에서 x-brief-secret 헤더로 자체 인증
     pathname.startsWith("/_next") ||
     pathname === "/favicon.ico"
   ) {
